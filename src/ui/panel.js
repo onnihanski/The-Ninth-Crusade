@@ -1,5 +1,9 @@
 import { HELP } from './input.js';
-import { effectivePower, effectiveDefense, effectiveSpeed, rangedProfile } from '../game/status.js';
+import {
+  effectivePower, effectiveDefense, effectiveSpeed, rangedProfile,
+  sanctuaryBonus, hasTrait,
+} from '../game/status.js';
+import { heirloomBonus } from '../data/traits.js';
 import { xpToNext } from '../game/progress.js';
 import { ITEMS, SLOTS, itemCategory, describeItem } from '../data/items.js';
 
@@ -59,11 +63,23 @@ export class Panel {
           : '<b style="color:' + colors.good + '">loaded</b>') + '</span>'
         : '');
 
-    this.el.statuses.innerHTML = (p.statuses ?? [])
-      .map((s) => '<span class="tag" style="color:' + colors.good + '">'
-        + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>')
-      .join(' ');
+    const stances = (p.statuses ?? []).map((s) =>
+      '<span class="tag" style="color:' + colors.good + '">'
+      + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>');
 
+    const sanctuary = sanctuaryBonus(p);
+    if (sanctuary > 0) {
+      stances.push('<span class="tag" style="color:' + colors.mythic + '">sanctuary +'
+        + sanctuary + '</span>');
+    }
+    if (hasTrait(p, 'block')) {
+      stances.push(p.blockCooldown > 0
+        ? '<span class="tag" style="color:' + colors.bad + '">shield down (' + p.blockCooldown + ')</span>'
+        : '<span class="tag" style="color:' + colors.good + '">shield up</span>');
+    }
+    this.el.statuses.innerHTML = stances.join(' ');
+
+    this.game = game;
     this.renderKit(game, colors);
 
     const seals = game.seals();
@@ -97,8 +113,11 @@ function stat(label, value, base, colors) {
 
 Panel.prototype.renderKit = function renderKit(game, colors) {
   const p = game.player;
-  const signature = p.inventory.map((i) => i.item.key).join(',')
-    + '|' + SLOTS.map((slot) => p.equipment[slot]?.item.key ?? '-').join(',');
+  const stamp = (item) => item
+    ? item.item.key + (item.item.heirloom ? '#' + item.item.heirloom.marks : '')
+    : '-';
+  const signature = p.inventory.map(stamp).join(',')
+    + '|' + SLOTS.map((slot) => stamp(p.equipment[slot])).join(',');
   if (signature === this.kitSignature) return;
   this.kitSignature = signature;
 
@@ -107,17 +126,19 @@ Panel.prototype.renderKit = function renderKit(game, colors) {
     const label = '<span class="slot">' + SLOT_LABEL[slot] + '</span>';
     if (!item) return '<li>' + label + '<span class="empty">—</span></li>';
     const color = colors[item.color] ?? colors.gear;
-    return '<li data-item="' + item.item.key + '" tabindex="0">' + label
-      + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span></li>';
+    return '<li data-source="kit" data-slot="' + slot + '" tabindex="0">' + label
+      + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span>'
+      + heirloomMark(item, colors) + '</li>';
   }).join('');
 
   this.el.inventory.innerHTML = p.inventory.length
     ? p.inventory.map((item, i) => {
       const spec = ITEMS[item.item.key] ?? item.item;
       const color = colors[item.color] ?? colors.text;
-      return '<li data-item="' + item.item.key + '" tabindex="0">'
+      return '<li data-source="pack" data-index="' + i + '" tabindex="0">'
         + '<kbd>' + (i + 1) + '</kbd> '
-        + '<span class="iname" style="color:' + color + '">' + escapeHtml(item.name) + '</span>'
+        + '<span class="iname" style="color:' + color + '">' + escapeHtml(item.name)
+        + '</span>' + heirloomMark(item, colors)
         + '<span class="icat">' + escapeHtml(itemCategory(spec)) + '</span></li>';
     }).join('')
     : '<li class="empty">(empty)</li>';
@@ -133,20 +154,38 @@ Panel.prototype.renderKit = function renderKit(game, colors) {
 Panel.prototype.bindTooltips = function bindTooltips(colors) {
   const tip = this.el.tooltip;
   const rows = [
-    ...this.el.inventory.querySelectorAll('[data-item]'),
-    ...this.el.worn.querySelectorAll('[data-item]'),
+    ...this.el.inventory.querySelectorAll('[data-source]'),
+    ...this.el.worn.querySelectorAll('[data-source]'),
   ];
 
+  const instanceFor = (row) => {
+    const p = this.game?.player;
+    if (!p) return null;
+    return row.dataset.source === 'kit'
+      ? p.equipment[row.dataset.slot]
+      : p.inventory[Number(row.dataset.index)];
+  };
+
   const show = (row) => {
-    const spec = ITEMS[row.dataset.item];
+    const instance = instanceFor(row);
+    const spec = instance && ITEMS[instance.item.key];
     if (!spec) return;
-    const d = describeItem(spec);
+    const d = describeItem(spec, instance.item);
     const meta = [d.category, d.rarity].filter(Boolean).join(' · ');
     tip.innerHTML =
       '<h3 style="color:' + (colors[spec.color] ?? colors.text) + '">'
       + escapeHtml(d.name) + '</h3>'
       + '<div class="tip-meta">' + escapeHtml(meta) + '</div>'
+      + (d.trait
+        ? '<div class="tip-trait" style="color:' + colors.mythic + '">'
+          + escapeHtml(d.trait.label) + '</div>'
+          + '<p class="tip-trait-text">' + escapeHtml(d.trait.text) + '</p>'
+        : '')
       + '<ul>' + d.effects.map((e) => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul>'
+      + (d.heirloom
+        ? '<p class="tip-heirloom" style="color:' + colors.revenant + '">+'
+          + d.heirloom.bonus + ' — ' + escapeHtml(d.heirloom.label) + '</p>'
+        : '')
       + '<p class="tip-lore">' + escapeHtml(d.lore) + '</p>';
     tip.hidden = false;
     tip.setAttribute('aria-hidden', 'false');
@@ -176,6 +215,13 @@ Panel.prototype.bindTooltips = function bindTooltips(colors) {
   }
   hide();
 };
+
+/** Gear taken off a predecessor wears its bonus openly in the list. */
+function heirloomMark(item, colors) {
+  const bonus = heirloomBonus(item.item.heirloom);
+  if (!bonus) return '';
+  return '<span class="heir" style="color:' + colors.revenant + '">+' + bonus + '</span>';
+}
 
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));

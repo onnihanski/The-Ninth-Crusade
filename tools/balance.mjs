@@ -15,6 +15,20 @@ import { effectiveSpeed } from '../src/game/status.js';
 import { chebyshev } from '../src/engine/grid.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { MAX_DEPTH } from '../src/data/regions.js';
+import { ITEMS } from '../src/data/items.js';
+
+// A/B switch for tuning. `BALANCE_DISABLE=cleave,attune` strips those
+// mechanics from the item data before any run, so their contribution to the
+// win rate can be measured instead of guessed at.
+const disabled = new Set((process.env.BALANCE_DISABLE ?? '').split(',').filter(Boolean));
+if (disabled.size) {
+  for (const item of Object.values(ITEMS)) {
+    if (item.trait && disabled.has(item.trait)) item.trait = null;
+    if (item.use?.attune && disabled.has('attune')) delete item.use.attune;
+    if (item.use?.echo && disabled.has('echo')) delete item.use.echo;
+  }
+  console.log('disabled: ' + [...disabled].join(', '));
+}
 
 const RUNS = Number(process.argv[2] ?? 300);
 const TURNS_PER_FLOOR = 1500;

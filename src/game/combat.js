@@ -1,5 +1,10 @@
-import { effectiveDefense, effectivePower, startReload } from './status.js';
+import { chebyshev } from '../engine/grid.js';
+import {
+  effectiveDefense, effectivePower, startReload,
+  hasTrait, itemWithTrait, canBlock, spendBlock,
+} from './status.js';
 import { gainXp, xpValue } from './progress.js';
+import { CLINCH_PENALTY, RIPOSTE_SHARE } from '../data/traits.js';
 
 // Defense mitigates a *proportion* of the blow rather than subtracting from it.
 //
@@ -38,6 +43,18 @@ export function attack(game, attacker, defender, options = {}) {
   const stem = options.verb ?? 'hit';
   const verb = attacker.isPlayer ? stem : stem + 's';
 
+  // A shield with Block stops the blow outright, then has to come back up.
+  if (!options.noBlock && canBlock(defender)) {
+    spendBlock(defender);
+    const shield = itemWithTrait(defender, 'block');
+    game.log(
+      capitalize(article(attacker)) + ' ' + (attacker.isPlayer ? stem : stem + 's')
+        + ' ' + object + '. The ' + shield.name + ' takes all of it.',
+      defender.isPlayer ? 'good' : 'textDim',
+    );
+    return;
+  }
+
   game.log(
     absorbed
       ? subject + ' ' + verb + ' ' + object + ', and it barely tells.'
@@ -45,6 +62,53 @@ export function attack(game, attacker, defender, options = {}) {
     absorbed ? 'textDim' : attacker.isPlayer ? 'text' : 'bad',
   );
   damage(game, defender, dealt, attacker);
+
+  // Riposte: armour that turns a blow aside completely answers for free. Never
+  // recursive -- a riposte cannot provoke a riposte.
+  if (absorbed && !options.noRiposte && defender.alive
+    && hasTrait(defender, 'riposte')
+    && chebyshev(defender.x, defender.y, attacker.x, attacker.y) <= 1) {
+    attack(game, defender, attacker, {
+      power: Math.max(1, Math.round(effectivePower(defender) * RIPOSTE_SHARE)),
+      verb: 'answer', noRiposte: true, noBlock: true,
+    });
+  }
+}
+
+/** Everything hostile to `actor` standing next to it. */
+function adjacentFoes(game, actor) {
+  const foes = actor.isPlayer
+    ? game.level.entities.filter((e) => e.ai && e.alive)
+    : [game.player];
+  return foes.filter((e) => chebyshev(actor.x, actor.y, e.x, e.y) <= 1);
+}
+
+/**
+ * A melee swing, which for a cleaving weapon is several. Routed through here
+ * rather than calling attack() directly so a trait can change what one blow
+ * means without every caller knowing about it.
+ */
+export function meleeStrike(game, attacker, target) {
+  // A polearm is at its worst with something already inside its arc.
+  const clinched = hasTrait(attacker, 'reach')
+    && chebyshev(attacker.x, attacker.y, target.x, target.y) <= 1;
+  const options = clinched
+    ? { power: Math.max(1, effectivePower(attacker) - CLINCH_PENALTY) }
+    : {};
+
+  if (!hasTrait(attacker, 'cleave')) {
+    attack(game, attacker, target, options);
+    return;
+  }
+
+  // Snapshot: a swing can kill, and killing mutates the entity list.
+  const targets = [target, ...adjacentFoes(game, attacker).filter((e) => e !== target)];
+  if (targets.length > 1) {
+    game.log('You sweep through ' + targets.length + ' of them.', 'notable');
+  }
+  for (const foe of targets) {
+    if (foe.alive) attack(game, attacker, foe, options);
+  }
 }
 
 /** `source` is whoever caused this, and is who collects the experience. */

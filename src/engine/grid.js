@@ -38,3 +38,24 @@ export const DIRS8 = [
 export function chebyshev(ax, ay, bx, by) {
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 }
+
+/** Bresenham, origin excluded, target included. Used to trace a bolt's path. */
+export function line(x0, y0, x1, y1) {
+  const points = [];
+  let x = x0;
+  let y = y0;
+  const dx = Math.abs(x1 - x0);
+  const dy = -Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let error = dx + dy;
+
+  for (let guard = 0; guard < 512; guard++) {
+    if (x === x1 && y === y1) break;
+    const doubled = 2 * error;
+    if (doubled >= dy) { error += dy; x += sx; }
+    if (doubled <= dx) { error += dx; y += sy; }
+    points.push([x, y]);
+  }
+  return points;
+}

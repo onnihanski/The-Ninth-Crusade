@@ -134,6 +134,39 @@ revenant is wearing it.** A predecessor who fell in plate with a censer flail
 is a genuinely dangerous thing to meet — and killing them is how you get it all
 back.
 
+## Special mechanics
+
+Six pieces of gear carry a named trait, and two relics behave unusually. Each
+is the identity of one item rather than a stat on it, and every one is
+explained in the item's brief when you hover it.
+
+| Trait | On | What it does |
+|---|---|---|
+| **Cleave** | martyr's greatsword | Every swing hits everything adjacent |
+| **Reach** | the Herald's pollaxe | Strikes two tiles away — but unwieldy in a clinch, and weaker for it |
+| **Piercing** | arbalest | The bolt runs through everything in its line, so aim down a corridor |
+| **Block** | tower shield | Stops one blow outright, then needs six turns to come back up |
+| **Riposte** | aegis of Saint Ambrose | A blow it turns aside completely is answered at half strength |
+| **Sanctuary** | vestment of the choir | Hardens while you hold your ground; forgets it the moment you move |
+
+**Attunement.** Relics grow while they sit unused: a phial carried two hundred
+turns heals half again as much as one drunk on sight. The nine-slot pack
+becomes a question of what you keep rather than what you drink immediately.
+
+**Echo.** The spark of the choir sounds twice — once when you use it, and again
+three turns later against a target it picks itself.
+
+### Heirlooms
+
+Gear taken off your own revenant remembers who carried it. It gains a permanent
+bonus scaled by how deep that crusader got — up to +4 on a predecessor who died
+at the bottom — and the history deepens every time the piece is lost and
+reclaimed. The pack shows the bonus beside the name; the brief names who carried
+it and how far.
+
+This is the memorial paying you back: your best gear becomes gear with a
+provenance, and getting it back means killing the version of you that had it.
+
 ## Balance
 
 Levelling and gear feed the same stats, so the numbers cannot be tuned by eye.
@@ -144,8 +177,10 @@ node tools/balance.mjs 250
 ```
 
 It runs two policies — `clear` (fights the floor, takes the loot, then descends)
-and `dive` (fights what is in the way and little else). As of the current
-numbers, a thorough crusader wins about **28%** of the time, reaches a median
+and `dive` (fights what is in the way and little else) — and takes
+`BALANCE_DISABLE=reach,attune` to strip named mechanics from the item data, so
+any one of them can be measured rather than guessed at. As of the current
+numbers, a thorough crusader wins about **34%** of the time, reaches a median
 depth of 9 at a median level of 10, and dies on every floor of the dungeon
 rather than piling up against one wall. The harness plays melee only and never
 picks up a bow, so it is a floor on the real number, not the number. A hurried one dies at the first boss,
@@ -156,6 +191,28 @@ five things that reading the code did not: fourteen monsters on depth 1, a
 defense stat that outran every monster in the game, a softlock where a full
 pack made a boss floor impossible to leave, the difficulty spiral below, and an
 archer that could never be caught.
+
+### What the special mechanics were worth
+
+Adding the eight special mechanics took the win rate from 28% to **80%**, which
+is the sort of thing that is invisible when you read the diff. Disabling them
+one at a time found the power was not spread evenly at all:
+
+| Removed | Win rate | Cost of the trait |
+|---|---|---|
+| nothing | 80% | — |
+| reach | 46% | **34 points** |
+| riposte | 66% | 14 points |
+| attunement | 68% | 12 points |
+| sanctuary / cleave / block / piercing | 80% each | within noise |
+| all of them | 28% | (the pre-trait baseline) |
+
+Reach on its own was worth more than every other mechanic combined: striking
+everything as it walks toward you is simply better than striking it once it
+arrives. It now costs 3 power against anything already adjacent, which gives
+melee monsters a reason to close and pays for the free hit. Riposte answers at
+half strength rather than with a whole extra attack, and attunement grows
+slower and caps lower.
 
 ### Archers, and why they stand still
 
@@ -221,7 +278,7 @@ src/
     combat.js      damage resolution, death, drops
     ai.js          monster behaviour
     effects.js     relic effects
-    status.js      derived stats -- gear + statuses -> power, defense, speed
+    status.js      derived stats -- gear, traits, statuses, heirlooms
     progress.js    experience, levels, regeneration
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
   ui/        browser layer
@@ -233,10 +290,11 @@ src/
     regions.js     the four regions and their bosses
     monsters.js    monster roster
     items.js       relics, arms, armour and seals
+    traits.js      the named special mechanics, and heirloom scaling
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    158 assertions, including a full run to depth 12
+tests/smoke.mjs    218 assertions, including a full run to depth 12
 ```
 
 ### Tone

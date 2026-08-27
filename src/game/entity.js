@@ -63,11 +63,31 @@ export function makeMonster(spec, x, y) {
  * A dead crusader from a previous run. Stats scale with how far they got --
  * a crusader who died on depth 10 is a genuinely dangerous thing to meet.
  */
+/**
+ * Memorial entries used to record equipment as bare keys. They now record
+ * `{ key, heirloom }`, because a piece can carry the history of everyone who
+ * has died in it. Old entries still read cleanly.
+ */
+function normaliseKit(equipment) {
+  return (equipment ?? []).map((piece) =>
+    typeof piece === 'string' ? { key: piece, heirloom: null } : piece);
+}
+
+/** One more crusader has died holding this, and it got as deep as they did. */
+function deepenHeirloom(previous, entry) {
+  return {
+    of: entry.name,
+    deepest: Math.max(previous?.deepest ?? 0, entry.depth ?? 1),
+    marks: (previous?.marks ?? 0) + 1,
+  };
+}
+
 export function makeRevenant(entry, x, y) {
   const depth = entry.depth;
   // They are still wearing it, so it still counts -- and it is still on them
   // when they go down again.
-  const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
+  const kitEntries = normaliseKit(entry.equipment);
+  const kit = kitEntries.map(({ key }) => ITEMS[key]).filter(Boolean);
   const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
 
   // A revenant is the crusader as they actually were: the stats they had
@@ -86,7 +106,14 @@ export function makeRevenant(entry, x, y) {
     power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
     defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
     xp: 20 + depth * 8 + level * 10,
-    drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
+    drops: [
+      ...(entry.relics ?? []).map((key) => ({ key, heirloom: null })),
+      // Take it back off them and it carries their name from here on.
+      ...kitEntries.map((piece) => ({
+        key: piece.key,
+        heirloom: deepenHeirloom(piece.heirloom, entry),
+      })),
+    ],
     revenant: true,
     level,
     ai: { hunting: false },
@@ -98,8 +125,10 @@ export function makeItem(spec, x, y) {
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
     item: {
-      key: spec.key, use: spec.use, equip: spec.equip,
+      key: spec.key, use: spec.use, equip: spec.equip, trait: spec.trait ?? null,
       seal: spec.seal, victory: spec.victory, flavour: spec.flavour,
+      heirloom: spec.heirloom ?? null,
+      carried: 0,                 // turns spent unused in a pack -- see attunement
     },
   });
 }

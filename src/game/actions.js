@@ -1,9 +1,9 @@
-import { attack } from './combat.js';
+import { meleeStrike, attack } from './combat.js';
 import { applyEffect } from './effects.js';
 import { Tiles } from '../world/tiles.js';
-import { effectiveSpeed, rangedProfile, canFire } from './status.js';
+import { effectiveSpeed, rangedProfile, canFire, hasTrait } from './status.js';
 import { shoot } from './combat.js';
-import { chebyshev } from '../engine/grid.js';
+import { chebyshev, line } from '../engine/grid.js';
 
 export const MAX_PACK = 9;
 
@@ -18,8 +18,18 @@ export function moveOrAttack(game, actor, dx, dy) {
 
   const blocker = level.blockerAt(nx, ny);
   if (blocker && blocker !== actor) {
-    attack(game, actor, blocker);
+    meleeStrike(game, actor, blocker);
     return true;
+  }
+
+  // Reach: strike over the empty tile in front of you. You hit first, and you
+  // keep hitting while giving ground -- which is what makes it worth the slot.
+  if (hasTrait(actor, 'reach') && level.isWalkable(nx, ny)) {
+    const far = level.blockerAt(actor.x + dx * 2, actor.y + dy * 2);
+    if (far && far !== actor && far.alive) {
+      meleeStrike(game, actor, far);
+      return true;
+    }
   }
 
   if (!level.isWalkable(nx, ny)) {
@@ -59,6 +69,8 @@ export function fire(game, actor) {
     return false;
   }
 
+  if (hasTrait(actor, 'pierce')) return firePiercing(game, actor, profile);
+
   const target = nearestTargetInRange(game, actor, profile.range);
   if (!target) {
     game.log('Nothing in range.', 'textDim');
@@ -67,6 +79,59 @@ export function fire(game, actor) {
 
   shoot(game, actor, target, profile);
   return true;
+}
+
+/**
+ * A piercing bolt runs on through everything in its line, so it aims at
+ * whichever visible target puts the most bodies on one line rather than simply
+ * the nearest. Lining them up in a corridor is the reward.
+ */
+function firePiercing(game, actor, profile) {
+  const level = game.level;
+  const candidates = visibleTargets(game, actor, profile.range);
+  if (!candidates.length) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  let best = null;
+  for (const candidate of candidates) {
+    const path = line(actor.x, actor.y, candidate.x, candidate.y);
+    const struck = [];
+    for (const [x, y] of path) {
+      if (level.isOpaque(x, y)) break;          // the bolt is stopped by stone
+      const foe = level.blockerAt(x, y);
+      if (foe && foe.ai && foe.alive) struck.push(foe);
+    }
+    if (!struck.length) continue;
+    if (!best || struck.length > best.length) best = struck;
+  }
+
+  if (!best) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  if (best.length > 1) {
+    game.log('The bolt goes through ' + best.length + ' of them.', 'notable');
+  }
+  // One shot, one reload, however many it passes through.
+  for (const foe of best) {
+    if (foe.alive) attack(game, actor, foe, { power: profile.power, verb: 'shoot' });
+  }
+  startReloadFor(actor, profile);
+  return true;
+}
+
+function startReloadFor(actor, profile) {
+  actor.reloadLeft = profile.reload;
+}
+
+function visibleTargets(game, actor, range) {
+  return game.level.entities.filter((entity) =>
+    entity.ai && entity.alive
+    && game.level.visible.get(entity.x, entity.y)
+    && chebyshev(actor.x, actor.y, entity.x, entity.y) <= range);
 }
 
 function nearestTargetInRange(game, actor, range) {
@@ -158,7 +223,7 @@ export function useItem(game, actor, index) {
     return false;
   }
 
-  const spent = applyEffect(game, actor, item.item.use);
+  const spent = applyEffect(game, actor, item);
   if (spent) actor.inventory.splice(index, 1);
   return spent;
 }

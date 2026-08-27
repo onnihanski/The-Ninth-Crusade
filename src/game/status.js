@@ -3,6 +3,8 @@
 // Nothing reads `.power`, `.defense` or `.speed` off an entity directly --
 // every call site goes through the accessors here. That is what lets equipment
 // and statuses both modify a stat without either knowing the other exists.
+import { heirloomBonus, BLOCK_RECOVERY, SANCTUARY_EVERY, SANCTUARY_MAX } from '../data/traits.js';
+
 const MIN_SPEED = 25;
 
 export function addStatus(game, entity, status) {
@@ -41,7 +43,60 @@ export function equipped(entity) {
 }
 
 function gearBonus(entity, field) {
-  return equipped(entity).reduce((sum, item) => sum + (item.item.equip[field] ?? 0), 0);
+  return equipped(entity).reduce(
+    (sum, item) => sum + (item.item.equip[field] ?? 0) + heirloomFor(item, field),
+    0,
+  );
+}
+
+/**
+ * A piece taken off your own revenant carries a bonus to whatever it is for:
+ * power on a weapon, defense on anything worn.
+ */
+function heirloomFor(item, field) {
+  const bonus = heirloomBonus(item.item.heirloom);
+  if (!bonus) return 0;
+  const slot = item.item.equip.slot;
+  if (field === 'power' && slot === 'weapon') return bonus;
+  if (field === 'defense' && slot !== 'weapon') return bonus;
+  return 0;
+}
+
+// -- Traits ------------------------------------------------------------------
+
+export function traitsOf(entity) {
+  return equipped(entity).map((item) => item.item.trait).filter(Boolean);
+}
+
+export function hasTrait(entity, name) {
+  return traitsOf(entity).includes(name);
+}
+
+export function itemWithTrait(entity, name) {
+  return equipped(entity).find((item) => item.item.trait === name) ?? null;
+}
+
+/**
+ * Sanctuary hardens while you hold your ground and forgets the moment you
+ * move, which makes it a stance rather than a stat.
+ */
+export function sanctuaryBonus(entity) {
+  if (!hasTrait(entity, 'sanctuary')) return 0;
+  return Math.min(SANCTUARY_MAX, Math.floor((entity.stillTurns ?? 0) / SANCTUARY_EVERY));
+}
+
+// -- Block -------------------------------------------------------------------
+
+export function canBlock(entity) {
+  return hasTrait(entity, 'block') && !(entity.blockCooldown > 0);
+}
+
+export function spendBlock(entity) {
+  entity.blockCooldown = BLOCK_RECOVERY;
+}
+
+export function tickBlock(entity) {
+  if (entity.blockCooldown > 0) entity.blockCooldown--;
 }
 
 export function effectivePower(entity) {
@@ -49,7 +104,8 @@ export function effectivePower(entity) {
 }
 
 export function effectiveDefense(entity) {
-  return entity.defense + gearBonus(entity, 'defense') + statusAmount(entity, 'ward');
+  return entity.defense + gearBonus(entity, 'defense')
+    + statusAmount(entity, 'ward') + sanctuaryBonus(entity);
 }
 
 /**
@@ -68,7 +124,11 @@ export function effectiveSpeed(entity) {
  */
 export function rangedProfile(entity) {
   const weapon = entity.equipment?.weapon;
-  return weapon?.item.equip.ranged ?? entity.ranged ?? null;
+  const ranged = weapon?.item.equip.ranged;
+  if (!ranged) return entity.ranged ?? null;
+
+  const bonus = heirloomBonus(weapon.item.heirloom);
+  return bonus ? { ...ranged, power: ranged.power + bonus } : ranged;
 }
 
 export function canFire(entity) {

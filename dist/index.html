@@ -95,6 +95,15 @@
     color: var(--dim); font-size: 9px; text-transform: uppercase;
     letter-spacing: 0.1em; margin-bottom: 7px;
   }
+  .tip-trait {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    font-weight: 600; margin-bottom: 2px;
+  }
+  .tip-trait-text { margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
+  .tip-heirloom {
+    margin: 0 0 8px; font-size: 10.5px; line-height: 1.45; font-style: italic;
+  }
+  .heir { font-size: 10px; font-weight: 600; flex: none; }
   #tooltip ul { margin: 0 0 8px; }
   #tooltip li {
     font-size: 11px; line-height: 1.4; padding-left: 9px; position: relative;
@@ -273,6 +282,27 @@ const DIRS8 = [
 
 function chebyshev(ax, ay, bx, by) {
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+}
+
+/** Bresenham, origin excluded, target included. Used to trace a bolt's path. */
+function line(x0, y0, x1, y1) {
+  const points = [];
+  let x = x0;
+  let y = y0;
+  const dx = Math.abs(x1 - x0);
+  const dy = -Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let error = dx + dy;
+
+  for (let guard = 0; guard < 512; guard++) {
+    if (x === x1 && y === y1) break;
+    const doubled = 2 * error;
+    if (doubled >= dy) { error += dy; x += sx; }
+    if (doubled <= dx) { error += dx; y += sy; }
+    points.push([x, y]);
+  }
+  return points;
 }
 
 // ==== src/engine/dijkstra.js ===============
@@ -575,6 +605,76 @@ class Level {
   }
 }
 
+// ==== src/data/traits.js ===================
+// Named special behaviours a piece of gear can carry. The data here is only
+// the reader-facing half -- what each trait *does* lives in game/, and the
+// briefs in the pack are generated from these strings so a trait can never be
+// described in the UI without being implemented.
+const TRAITS = {
+  cleave: {
+    label: 'Cleave',
+    text: 'Every swing hits everything next to you',
+  },
+  reach: {
+    label: 'Reach',
+    text: 'Strikes two tiles away — but unwieldy in a clinch, and weaker for it',
+  },
+  pierce: {
+    label: 'Piercing',
+    text: 'The bolt runs on through everything in its line',
+  },
+  block: {
+    label: 'Block',
+    text: 'Stops one blow outright, then needs a few turns to come back up',
+  },
+  riposte: {
+    label: 'Riposte',
+    text: 'A blow it turns aside completely is answered for free',
+  },
+  sanctuary: {
+    label: 'Sanctuary',
+    text: 'Hardens while you hold your ground, and forgets the moment you move',
+  },
+};
+
+/**
+ * A polearm's price. Reach lets you strike everything as it approaches, which
+ * measured out at more than every other trait combined -- the balance harness
+ * put it at thirty-four points of win rate on its own. Being poor once
+ * something is actually on top of you is what pays for it, and gives melee
+ * monsters a reason to close.
+ */
+const CLINCH_PENALTY = 3;
+
+/** A riposte answers at half strength: a counter, not a second sword. */
+const RIPOSTE_SHARE = 0.5;
+
+/** How many turns a shield needs before it can stop another blow outright. */
+const BLOCK_RECOVERY = 6;
+
+/** Sanctuary: one point of defense per this many turns held, up to the cap. */
+const SANCTUARY_EVERY = 2;
+const SANCTUARY_MAX = 4;
+
+// -- Heirlooms ---------------------------------------------------------------
+//
+// Gear taken off your own revenant remembers who carried it. The bonus scales
+// with how deep that crusader got, so reclaiming a piece from a predecessor who
+// died at the bottom of the dungeon is worth considerably more than one who
+// fell in the Reliquary.
+const HEIRLOOM_MAX = 4;
+
+function heirloomBonus(heirloom) {
+  if (!heirloom) return 0;
+  return Math.max(1, Math.min(HEIRLOOM_MAX, Math.floor(heirloom.deepest / 3)));
+}
+
+function heirloomLabel(heirloom) {
+  if (!heirloom) return '';
+  const carried = heirloom.marks > 1 ? heirloom.marks + ' crusaders' : heirloom.of;
+  return 'Carried by ' + carried + ', as deep as ' + heirloom.deepest;
+}
+
 // ==== src/data/items.js ====================
 // Relics are consumed; gear is worn. Both are pure data -- `use` is resolved in
 // game/effects.js, `equip` in game/status.js, and `ranged` in game/combat.js.
@@ -598,9 +698,9 @@ const RARITY_COLOR = {
  * thing carrying it, which is what makes bosses worth more than their seal.
  */
 function gear({ name, glyph, slot, rarity, power = 0, defense = 0, speed = 0,
-  ranged = null, minDepth = 1, weight = 0, flavour, lore }) {
+  ranged = null, trait = null, minDepth = 1, weight = 0, flavour, lore }) {
   return {
-    name, glyph, rarity,
+    name, glyph, rarity, trait,
     color: RARITY_COLOR[rarity],
     bossOnly: rarity === 'sacred',
     weight: rarity === 'sacred' ? 0 : weight,
@@ -614,7 +714,7 @@ const ITEMS = {
   // -- Relics: spent, not worn ----------------------------------------------
   reliquaryPhial: {
     name: 'reliquary phial', glyph: '!', color: 'item',
-    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
+    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10, attune: { per: 20, max: 6 } },
     flavour: 'Contents: mostly saint.',
     lore: 'Ground bone in consecrated water, bottled by an order that kept '
       + 'excellent records and no explanations. It works. Nobody has ever '
@@ -622,7 +722,8 @@ const ITEMS = {
   },
   sparkOfTheChoir: {
     name: 'spark of the choir', glyph: '?', color: 'item',
-    weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
+    weight: 8, minDepth: 2,
+    use: { kind: 'smite', amount: 12, range: 6, attune: { per: 20, max: 6 }, echo: 3 },
     flavour: 'One held note, released.',
     lore: 'A single note from the Choir, caught in wax before it could finish. '
       + 'Breaking the seal finishes it. Whatever it was aimed at when it was '
@@ -630,7 +731,8 @@ const ITEMS = {
   },
   psalmOfWard: {
     name: 'psalm of ward', glyph: '?', color: 'item',
-    weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
+    weight: 7, minDepth: 3,
+    use: { kind: 'ward', amount: 3, turns: 12, attune: { per: 30, max: 3 } },
     flavour: 'Sung badly, it still works.',
     lore: 'Twelve lines that make you harder to reach. The crusade issues them '
       + 'to everyone and teaches the tune to nobody, on the theory that panic '
@@ -680,7 +782,7 @@ const ITEMS = {
   }),
   martyrsGreatsword: gear({
     name: "martyr's greatsword", glyph: ')', slot: 'weapon', rarity: 'rare',
-    power: 7, speed: -25, minDepth: 8, weight: 3,
+    power: 7, speed: -25, trait: 'cleave', minDepth: 8, weight: 3,
     flavour: 'Two hands, one conviction, no hurry.',
     lore: 'Too long to draw in a corridor and too heavy to swing twice, which '
       + 'has never once discouraged anyone. Every martyr it is named for died '
@@ -688,7 +790,7 @@ const ITEMS = {
   }),
   heraldsPollaxe: gear({
     name: "the Herald's pollaxe", glyph: ')', slot: 'weapon', rarity: 'sacred',
-    power: 6, speed: -5,
+    power: 5, speed: -5, trait: 'reach',
     flavour: 'He read your name off a list. This is the rest of the sentence.',
     lore: 'Axe, hammer and spike on one shaft: an argument with three '
       + 'conclusions. The Herald kept it immaculate and used it rarely, which '
@@ -720,7 +822,7 @@ const ITEMS = {
   }),
   arbalest: gear({
     name: 'arbalest', glyph: '}', slot: 'weapon', rarity: 'rare',
-    power: 2, ranged: { power: 9, range: 7, reload: 3 }, speed: -10,
+    power: 2, ranged: { power: 9, range: 7, reload: 3 }, speed: -10, trait: 'pierce',
     minDepth: 7, weight: 3,
     flavour: 'Punches through a wall\'s worth of argument.',
     lore: 'Steel-limbed, cranked with a windlass, banned twice by councils '
@@ -763,7 +865,7 @@ const ITEMS = {
   }),
   towerShield: gear({
     name: 'tower shield', glyph: '(', slot: 'shield', rarity: 'rare',
-    defense: 4, speed: -20, minDepth: 8, weight: 3,
+    defense: 4, speed: -20, trait: 'block', minDepth: 8, weight: 3,
     flavour: 'Behind this, very little happens to you. Slowly.',
     lore: 'Chest to shin, banded in iron, heavy enough to change how you '
       + 'stand. Men have won fights behind these by simply outlasting the '
@@ -771,7 +873,7 @@ const ITEMS = {
   }),
   aegisOfAmbrose: gear({
     name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
-    defense: 4, speed: -5,
+    defense: 4, speed: -5, trait: 'riposte',
     flavour: 'It did not work for him either, but it took longer.',
     lore: 'The saint was interred holding it and declined to let go. It weighs '
       + 'a quarter of what it looks like, and the arm straps adjust themselves '
@@ -820,7 +922,7 @@ const ITEMS = {
   }),
   vestmentOfTheChoir: gear({
     name: 'vestment of the choir', glyph: '[', slot: 'armour', rarity: 'sacred',
-    defense: 5,
+    defense: 5, trait: 'sanctuary',
     flavour: 'Weightless. Whatever is holding it up is not the cloth.',
     lore: 'Plain white wool, unadorned, of a weight that suggests nothing is '
       + 'inside it. Blows land on it and stop. The wool does not move, and '
@@ -877,7 +979,7 @@ function itemCategory(spec) {
  * Everything the hover panel needs, derived from the data rather than written
  * twice: retuning a number in this file updates what the game says about it.
  */
-function describeItem(spec) {
+function describeItem(spec, instance = null) {
   const effects = [];
   const equip = spec.equip;
 
@@ -907,13 +1009,31 @@ function describeItem(spec) {
     effects.push('Spent on use');
   }
 
+  if (use?.attune) {
+    effects.push('Grows stronger the longer it goes unused: +1 every '
+      + use.attune.per + ' turns carried, up to +' + use.attune.max);
+  }
+  if (use?.echo) effects.push('Sounds a second time, ' + use.echo + ' turns later');
+
   if (spec.seal) effects.push('Opens this region\'s gate. Kept, never spent, and never takes pack space');
   if (spec.victory) effects.push('Ends the crusade the moment you pick it up');
+
+  if (spec.trait === 'reach') {
+    effects.push('Strikes at two tiles, and at ' + CLINCH_PENALTY
+      + ' less power against anything already adjacent');
+  }
+
+  const trait = spec.trait ? TRAITS[spec.trait] : null;
+  const heirloom = instance?.heirloom ?? null;
 
   return {
     name: spec.name,
     category: itemCategory(spec),
     rarity: spec.rarity ?? null,
+    trait: trait ? { label: trait.label, text: trait.text } : null,
+    heirloom: heirloom
+      ? { bonus: heirloomBonus(heirloom), label: heirloomLabel(heirloom) }
+      : null,
     effects,
     lore: spec.lore ?? spec.flavour ?? '',
   };
@@ -984,11 +1104,31 @@ function makeMonster(spec, x, y) {
  * A dead crusader from a previous run. Stats scale with how far they got --
  * a crusader who died on depth 10 is a genuinely dangerous thing to meet.
  */
+/**
+ * Memorial entries used to record equipment as bare keys. They now record
+ * `{ key, heirloom }`, because a piece can carry the history of everyone who
+ * has died in it. Old entries still read cleanly.
+ */
+function normaliseKit(equipment) {
+  return (equipment ?? []).map((piece) =>
+    typeof piece === 'string' ? { key: piece, heirloom: null } : piece);
+}
+
+/** One more crusader has died holding this, and it got as deep as they did. */
+function deepenHeirloom(previous, entry) {
+  return {
+    of: entry.name,
+    deepest: Math.max(previous?.deepest ?? 0, entry.depth ?? 1),
+    marks: (previous?.marks ?? 0) + 1,
+  };
+}
+
 function makeRevenant(entry, x, y) {
   const depth = entry.depth;
   // They are still wearing it, so it still counts -- and it is still on them
   // when they go down again.
-  const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
+  const kitEntries = normaliseKit(entry.equipment);
+  const kit = kitEntries.map(({ key }) => ITEMS[key]).filter(Boolean);
   const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
 
   // A revenant is the crusader as they actually were: the stats they had
@@ -1007,7 +1147,14 @@ function makeRevenant(entry, x, y) {
     power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
     defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
     xp: 20 + depth * 8 + level * 10,
-    drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
+    drops: [
+      ...(entry.relics ?? []).map((key) => ({ key, heirloom: null })),
+      // Take it back off them and it carries their name from here on.
+      ...kitEntries.map((piece) => ({
+        key: piece.key,
+        heirloom: deepenHeirloom(piece.heirloom, entry),
+      })),
+    ],
     revenant: true,
     level,
     ai: { hunting: false },
@@ -1019,8 +1166,10 @@ function makeItem(spec, x, y) {
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
     item: {
-      key: spec.key, use: spec.use, equip: spec.equip,
+      key: spec.key, use: spec.use, equip: spec.equip, trait: spec.trait ?? null,
       seal: spec.seal, victory: spec.victory, flavour: spec.flavour,
+      heirloom: spec.heirloom ?? null,
+      carried: 0,                 // turns spent unused in a pack -- see attunement
     },
   });
 }
@@ -1031,6 +1180,7 @@ function makeItem(spec, x, y) {
 // Nothing reads `.power`, `.defense` or `.speed` off an entity directly --
 // every call site goes through the accessors here. That is what lets equipment
 // and statuses both modify a stat without either knowing the other exists.
+
 const MIN_SPEED = 25;
 
 function addStatus(game, entity, status) {
@@ -1069,7 +1219,60 @@ function equipped(entity) {
 }
 
 function gearBonus(entity, field) {
-  return equipped(entity).reduce((sum, item) => sum + (item.item.equip[field] ?? 0), 0);
+  return equipped(entity).reduce(
+    (sum, item) => sum + (item.item.equip[field] ?? 0) + heirloomFor(item, field),
+    0,
+  );
+}
+
+/**
+ * A piece taken off your own revenant carries a bonus to whatever it is for:
+ * power on a weapon, defense on anything worn.
+ */
+function heirloomFor(item, field) {
+  const bonus = heirloomBonus(item.item.heirloom);
+  if (!bonus) return 0;
+  const slot = item.item.equip.slot;
+  if (field === 'power' && slot === 'weapon') return bonus;
+  if (field === 'defense' && slot !== 'weapon') return bonus;
+  return 0;
+}
+
+// -- Traits ------------------------------------------------------------------
+
+function traitsOf(entity) {
+  return equipped(entity).map((item) => item.item.trait).filter(Boolean);
+}
+
+function hasTrait(entity, name) {
+  return traitsOf(entity).includes(name);
+}
+
+function itemWithTrait(entity, name) {
+  return equipped(entity).find((item) => item.item.trait === name) ?? null;
+}
+
+/**
+ * Sanctuary hardens while you hold your ground and forgets the moment you
+ * move, which makes it a stance rather than a stat.
+ */
+function sanctuaryBonus(entity) {
+  if (!hasTrait(entity, 'sanctuary')) return 0;
+  return Math.min(SANCTUARY_MAX, Math.floor((entity.stillTurns ?? 0) / SANCTUARY_EVERY));
+}
+
+// -- Block -------------------------------------------------------------------
+
+function canBlock(entity) {
+  return hasTrait(entity, 'block') && !(entity.blockCooldown > 0);
+}
+
+function spendBlock(entity) {
+  entity.blockCooldown = BLOCK_RECOVERY;
+}
+
+function tickBlock(entity) {
+  if (entity.blockCooldown > 0) entity.blockCooldown--;
 }
 
 function effectivePower(entity) {
@@ -1077,7 +1280,8 @@ function effectivePower(entity) {
 }
 
 function effectiveDefense(entity) {
-  return entity.defense + gearBonus(entity, 'defense') + statusAmount(entity, 'ward');
+  return entity.defense + gearBonus(entity, 'defense')
+    + statusAmount(entity, 'ward') + sanctuaryBonus(entity);
 }
 
 /**
@@ -1096,7 +1300,11 @@ function effectiveSpeed(entity) {
  */
 function rangedProfile(entity) {
   const weapon = entity.equipment?.weapon;
-  return weapon?.item.equip.ranged ?? entity.ranged ?? null;
+  const ranged = weapon?.item.equip.ranged;
+  if (!ranged) return entity.ranged ?? null;
+
+  const bonus = heirloomBonus(weapon.item.heirloom);
+  return bonus ? { ...ranged, power: ranged.power + bonus } : ranged;
 }
 
 function canFire(entity) {
@@ -1229,6 +1437,18 @@ function attack(game, attacker, defender, options = {}) {
   const stem = options.verb ?? 'hit';
   const verb = attacker.isPlayer ? stem : stem + 's';
 
+  // A shield with Block stops the blow outright, then has to come back up.
+  if (!options.noBlock && canBlock(defender)) {
+    spendBlock(defender);
+    const shield = itemWithTrait(defender, 'block');
+    game.log(
+      capitalize(article(attacker)) + ' ' + (attacker.isPlayer ? stem : stem + 's')
+        + ' ' + object + '. The ' + shield.name + ' takes all of it.',
+      defender.isPlayer ? 'good' : 'textDim',
+    );
+    return;
+  }
+
   game.log(
     absorbed
       ? subject + ' ' + verb + ' ' + object + ', and it barely tells.'
@@ -1236,6 +1456,53 @@ function attack(game, attacker, defender, options = {}) {
     absorbed ? 'textDim' : attacker.isPlayer ? 'text' : 'bad',
   );
   damage(game, defender, dealt, attacker);
+
+  // Riposte: armour that turns a blow aside completely answers for free. Never
+  // recursive -- a riposte cannot provoke a riposte.
+  if (absorbed && !options.noRiposte && defender.alive
+    && hasTrait(defender, 'riposte')
+    && chebyshev(defender.x, defender.y, attacker.x, attacker.y) <= 1) {
+    attack(game, defender, attacker, {
+      power: Math.max(1, Math.round(effectivePower(defender) * RIPOSTE_SHARE)),
+      verb: 'answer', noRiposte: true, noBlock: true,
+    });
+  }
+}
+
+/** Everything hostile to `actor` standing next to it. */
+function adjacentFoes(game, actor) {
+  const foes = actor.isPlayer
+    ? game.level.entities.filter((e) => e.ai && e.alive)
+    : [game.player];
+  return foes.filter((e) => chebyshev(actor.x, actor.y, e.x, e.y) <= 1);
+}
+
+/**
+ * A melee swing, which for a cleaving weapon is several. Routed through here
+ * rather than calling attack() directly so a trait can change what one blow
+ * means without every caller knowing about it.
+ */
+function meleeStrike(game, attacker, target) {
+  // A polearm is at its worst with something already inside its arc.
+  const clinched = hasTrait(attacker, 'reach')
+    && chebyshev(attacker.x, attacker.y, target.x, target.y) <= 1;
+  const options = clinched
+    ? { power: Math.max(1, effectivePower(attacker) - CLINCH_PENALTY) }
+    : {};
+
+  if (!hasTrait(attacker, 'cleave')) {
+    attack(game, attacker, target, options);
+    return;
+  }
+
+  // Snapshot: a swing can kill, and killing mutates the entity list.
+  const targets = [target, ...adjacentFoes(game, attacker).filter((e) => e !== target)];
+  if (targets.length > 1) {
+    game.log('You sweep through ' + targets.length + ' of them.', 'notable');
+  }
+  for (const foe of targets) {
+    if (foe.alive) attack(game, attacker, foe, options);
+  }
 }
 
 /** `source` is whoever caused this, and is who collects the experience. */
@@ -1285,6 +1552,98 @@ function bareName(entity) {
 
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ==== src/game/effects.js ==================
+// Relic effects are tagged unions resolved here, so items.js stays pure data.
+// Returns true if the relic was spent.
+function applyEffect(game, user, item) {
+  const effect = item.item.use;
+  const amount = attunedAmount(item);
+
+  switch (effect.kind) {
+    case 'heal': {
+      if (user.hp >= user.maxHp) {
+        game.log('You are as whole as you are going to get.', 'textDim');
+        return false;
+      }
+      const healed = Math.min(amount, user.maxHp - user.hp);
+      user.hp += healed;
+      game.log('Something knits. ' + healed + ' hit points.', 'good');
+      return true;
+    }
+
+    case 'smite': {
+      const struck = smiteNearest(game, user, amount, effect.range,
+        'One held note breaks over');
+      if (!struck) game.log('The note goes out unanswered.', 'textDim');
+      // Echo: the choir does not stop when you do.
+      if (effect.echo) {
+        game.scheduleEcho({ amount: Math.round(amount * 0.6), range: effect.range, turns: effect.echo });
+        game.log('Something in the dark takes up the note.', 'mythic');
+      }
+      return true;
+    }
+
+    case 'ward': {
+      addStatus(game, user, { kind: 'ward', amount, turns: effect.turns });
+      game.log('You are, for the moment, harder to reach.', 'good');
+      return true;
+    }
+
+    case 'blink': {
+      const spot = game.randomOpenTile();
+      if (!spot) {
+        game.log('Nowhere to be instead.', 'textDim');
+        return false;
+      }
+      user.x = spot.x;
+      user.y = spot.y;
+      game.log('The floor forgets you were standing on it.', 'mythic');
+      return true;
+    }
+
+    default:
+      game.log('Nothing happens, at length.', 'textDim');
+      return false;
+  }
+}
+
+/**
+ * Attunement: a relic carried and left alone grows into itself. It makes the
+ * nine-slot pack a real decision -- what you keep, and for how long, rather
+ * than what you drink the moment you find it.
+ */
+function attunedAmount(item) {
+  const effect = item.item.use;
+  if (!effect?.attune) return effect?.amount ?? 0;
+  const carried = item.item.carried ?? 0;
+  const grown = Math.min(effect.attune.max, Math.floor(carried / effect.attune.per));
+  return effect.amount + grown;
+}
+
+/** Strike the nearest thing the user can see. Returns the victim, or null. */
+function smiteNearest(game, user, amount, range, verb) {
+  const target = nearestVisible(game, user, range);
+  if (!target) return null;
+  game.log(verb + ' the ' + target.name + '.', 'mythic');
+  damage(game, target, amount, user);
+  return target;
+}
+
+function nearestVisible(game, from, range) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const e of game.level.entities) {
+    if (!e.ai || !e.alive) continue;
+    if (!game.level.visible.get(e.x, e.y)) continue;
+    const dist = chebyshev(from.x, from.y, e.x, e.y);
+    if (dist <= range && dist < bestDist) {
+      best = e;
+      bestDist = dist;
+    }
+  }
+  return best;
 }
 
 // ==== src/game/ai.js =======================
@@ -1796,6 +2155,7 @@ class Game {
     this.messages = [];
     this.state = 'playing';
     this.turn = 0;
+    this.echoes = [];
     this.runRecorded = false;
 
     this.crusaderName = crusaderName(this.rng);
@@ -1825,6 +2185,7 @@ class Game {
     this.level.add(this.player);
 
     this.wanderers = 0;
+    this.echoes = [];              // a note does not carry between floors
     this.setUpGate(depth);
     this.populate(depth);
     this.summonTheRemembered(depth);
@@ -1969,18 +2330,25 @@ class Game {
     this.finishRun('walked out');
   }
 
-  /** Spill a dead thing's drops onto the floor where it fell. */
+  /**
+   * Spill a dead thing's drops onto the floor where it fell. A drop is either a
+   * bare item key (bosses) or `{ key, heirloom }` (anything taken off a
+   * revenant, which carries the history of who died in it).
+   */
   spillDrops(entity) {
     if (!entity.drops?.length) return;
-    for (const key of entity.drops) {
+    for (const drop of entity.drops) {
+      const { key, heirloom } = typeof drop === 'string' ? { key: drop, heirloom: null } : drop;
       const spec = ITEMS[key];
       if (!spec) continue;
       const spot = this.level.isWalkable(entity.x, entity.y)
         ? { x: entity.x, y: entity.y }
         : this.randomOpenTile();
       if (!spot) continue;
-      this.level.add(makeItem({ key, ...spec }, spot.x, spot.y));
-      this.log('It drops ' + spec.name + '.', 'notable');
+
+      this.level.add(makeItem({ key, ...spec, heirloom }, spot.x, spot.y));
+      this.log('It drops ' + spec.name + (heirloom ? ', and it knows your name.' : '.'),
+        heirloom ? 'mythic' : 'notable');
     }
     entity.drops = [];
   }
@@ -2002,7 +2370,10 @@ class Game {
       relics: this.player.inventory
         .filter((i) => i.item?.key && !i.item.victory)
         .map((i) => i.item.key),
-      equipment: equipped(this.player).map((i) => i.item.key),
+      equipment: equipped(this.player).map((i) => ({
+        key: i.item.key,
+        heirloom: i.item.heirloom ?? null,
+      })),
       at: Date.now(),
     });
   }
@@ -2019,8 +2390,12 @@ class Game {
     this.turn++;
     tickStatuses(this, this.player);
     tickReload(this.player);
+    tickBlock(this.player);
     tickRegeneration(this.player);
     this.hintRegeneration();
+    this.tickStillness();
+    this.tickAttunement();
+    this.tickEchoes();
     this.maybeWander();
     this.runMonsterTurns();
     this._distCache = null;
@@ -2060,6 +2435,47 @@ class Game {
       }
       this._distCache = null;
     }
+  }
+
+  /**
+   * Sanctuary counts turns held in one place. Tracked here rather than in the
+   * move action because every other way of spending a turn counts as standing
+   * still, and only actually moving should reset it.
+   */
+  tickStillness() {
+    const moved = this._lastPos
+      && (this._lastPos.x !== this.player.x || this._lastPos.y !== this.player.y);
+    this.player.stillTurns = moved ? 0 : (this.player.stillTurns ?? 0) + 1;
+    this._lastPos = { x: this.player.x, y: this.player.y };
+  }
+
+  /** Relics grow while they sit unused in the pack. */
+  tickAttunement() {
+    for (const item of this.player.inventory) {
+      if (item.item.use?.attune) item.item.carried = (item.item.carried ?? 0) + 1;
+    }
+  }
+
+  /** A note sounded earlier, finishing on its own and picking its own target. */
+  tickEchoes() {
+    if (!this.echoes.length) return;
+    const due = [];
+    this.echoes = this.echoes.filter((echo) => {
+      echo.turns--;
+      if (echo.turns > 0) return true;
+      due.push(echo);
+      return false;
+    });
+
+    for (const echo of due) {
+      const struck = smiteNearest(this, this.player, echo.amount, echo.range,
+        'The note finishes itself against');
+      if (!struck) this.log('Somewhere behind you, a note finishes alone.', 'textDim');
+    }
+  }
+
+  scheduleEcho(echo) {
+    this.echoes.push({ ...echo });
   }
 
   /**
@@ -2138,72 +2554,6 @@ class Game {
   }
 }
 
-// ==== src/game/effects.js ==================
-// Relic effects are tagged unions resolved here, so items.js stays pure data.
-// Returns true if the relic was spent.
-function applyEffect(game, user, effect) {
-  switch (effect.kind) {
-    case 'heal': {
-      if (user.hp >= user.maxHp) {
-        game.log('You are as whole as you are going to get.', 'textDim');
-        return false;
-      }
-      const healed = Math.min(effect.amount, user.maxHp - user.hp);
-      user.hp += healed;
-      game.log('Something knits. ' + healed + ' hit points.', 'good');
-      return true;
-    }
-
-    case 'smite': {
-      const target = nearestVisible(game, user, effect.range);
-      if (!target) {
-        game.log('The note goes out unanswered.', 'textDim');
-        return true;
-      }
-      game.log('One held note breaks over the ' + target.name + '.', 'mythic');
-      damage(game, target, effect.amount, user);
-      return true;
-    }
-
-    case 'ward': {
-      addStatus(game, user, { kind: 'ward', amount: effect.amount, turns: effect.turns });
-      game.log('You are, for the moment, harder to reach.', 'good');
-      return true;
-    }
-
-    case 'blink': {
-      const spot = game.randomOpenTile();
-      if (!spot) {
-        game.log('Nowhere to be instead.', 'textDim');
-        return false;
-      }
-      user.x = spot.x;
-      user.y = spot.y;
-      game.log('The floor forgets you were standing on it.', 'mythic');
-      return true;
-    }
-
-    default:
-      game.log('Nothing happens, at length.', 'textDim');
-      return false;
-  }
-}
-
-function nearestVisible(game, from, range) {
-  let best = null;
-  let bestDist = Infinity;
-  for (const e of game.level.entities) {
-    if (!e.ai || !e.alive) continue;
-    if (!game.level.visible.get(e.x, e.y)) continue;
-    const dist = chebyshev(from.x, from.y, e.x, e.y);
-    if (dist <= range && dist < bestDist) {
-      best = e;
-      bestDist = dist;
-    }
-  }
-  return best;
-}
-
 // ==== src/game/actions.js ==================
 const MAX_PACK = 9;
 
@@ -2218,8 +2568,18 @@ function moveOrAttack(game, actor, dx, dy) {
 
   const blocker = level.blockerAt(nx, ny);
   if (blocker && blocker !== actor) {
-    attack(game, actor, blocker);
+    meleeStrike(game, actor, blocker);
     return true;
+  }
+
+  // Reach: strike over the empty tile in front of you. You hit first, and you
+  // keep hitting while giving ground -- which is what makes it worth the slot.
+  if (hasTrait(actor, 'reach') && level.isWalkable(nx, ny)) {
+    const far = level.blockerAt(actor.x + dx * 2, actor.y + dy * 2);
+    if (far && far !== actor && far.alive) {
+      meleeStrike(game, actor, far);
+      return true;
+    }
   }
 
   if (!level.isWalkable(nx, ny)) {
@@ -2259,6 +2619,8 @@ function fire(game, actor) {
     return false;
   }
 
+  if (hasTrait(actor, 'pierce')) return firePiercing(game, actor, profile);
+
   const target = nearestTargetInRange(game, actor, profile.range);
   if (!target) {
     game.log('Nothing in range.', 'textDim');
@@ -2267,6 +2629,59 @@ function fire(game, actor) {
 
   shoot(game, actor, target, profile);
   return true;
+}
+
+/**
+ * A piercing bolt runs on through everything in its line, so it aims at
+ * whichever visible target puts the most bodies on one line rather than simply
+ * the nearest. Lining them up in a corridor is the reward.
+ */
+function firePiercing(game, actor, profile) {
+  const level = game.level;
+  const candidates = visibleTargets(game, actor, profile.range);
+  if (!candidates.length) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  let best = null;
+  for (const candidate of candidates) {
+    const path = line(actor.x, actor.y, candidate.x, candidate.y);
+    const struck = [];
+    for (const [x, y] of path) {
+      if (level.isOpaque(x, y)) break;          // the bolt is stopped by stone
+      const foe = level.blockerAt(x, y);
+      if (foe && foe.ai && foe.alive) struck.push(foe);
+    }
+    if (!struck.length) continue;
+    if (!best || struck.length > best.length) best = struck;
+  }
+
+  if (!best) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  if (best.length > 1) {
+    game.log('The bolt goes through ' + best.length + ' of them.', 'notable');
+  }
+  // One shot, one reload, however many it passes through.
+  for (const foe of best) {
+    if (foe.alive) attack(game, actor, foe, { power: profile.power, verb: 'shoot' });
+  }
+  startReloadFor(actor, profile);
+  return true;
+}
+
+function startReloadFor(actor, profile) {
+  actor.reloadLeft = profile.reload;
+}
+
+function visibleTargets(game, actor, range) {
+  return game.level.entities.filter((entity) =>
+    entity.ai && entity.alive
+    && game.level.visible.get(entity.x, entity.y)
+    && chebyshev(actor.x, actor.y, entity.x, entity.y) <= range);
 }
 
 function nearestTargetInRange(game, actor, range) {
@@ -2358,7 +2773,7 @@ function useItem(game, actor, index) {
     return false;
   }
 
-  const spent = applyEffect(game, actor, item.item.use);
+  const spent = applyEffect(game, actor, item);
   if (spent) actor.inventory.splice(index, 1);
   return spent;
 }
@@ -2618,11 +3033,23 @@ class Panel {
           : '<b style="color:' + colors.good + '">loaded</b>') + '</span>'
         : '');
 
-    this.el.statuses.innerHTML = (p.statuses ?? [])
-      .map((s) => '<span class="tag" style="color:' + colors.good + '">'
-        + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>')
-      .join(' ');
+    const stances = (p.statuses ?? []).map((s) =>
+      '<span class="tag" style="color:' + colors.good + '">'
+      + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>');
 
+    const sanctuary = sanctuaryBonus(p);
+    if (sanctuary > 0) {
+      stances.push('<span class="tag" style="color:' + colors.mythic + '">sanctuary +'
+        + sanctuary + '</span>');
+    }
+    if (hasTrait(p, 'block')) {
+      stances.push(p.blockCooldown > 0
+        ? '<span class="tag" style="color:' + colors.bad + '">shield down (' + p.blockCooldown + ')</span>'
+        : '<span class="tag" style="color:' + colors.good + '">shield up</span>');
+    }
+    this.el.statuses.innerHTML = stances.join(' ');
+
+    this.game = game;
     this.renderKit(game, colors);
 
     const seals = game.seals();
@@ -2656,8 +3083,11 @@ function stat(label, value, base, colors) {
 
 Panel.prototype.renderKit = function renderKit(game, colors) {
   const p = game.player;
-  const signature = p.inventory.map((i) => i.item.key).join(',')
-    + '|' + SLOTS.map((slot) => p.equipment[slot]?.item.key ?? '-').join(',');
+  const stamp = (item) => item
+    ? item.item.key + (item.item.heirloom ? '#' + item.item.heirloom.marks : '')
+    : '-';
+  const signature = p.inventory.map(stamp).join(',')
+    + '|' + SLOTS.map((slot) => stamp(p.equipment[slot])).join(',');
   if (signature === this.kitSignature) return;
   this.kitSignature = signature;
 
@@ -2666,17 +3096,19 @@ Panel.prototype.renderKit = function renderKit(game, colors) {
     const label = '<span class="slot">' + SLOT_LABEL[slot] + '</span>';
     if (!item) return '<li>' + label + '<span class="empty">—</span></li>';
     const color = colors[item.color] ?? colors.gear;
-    return '<li data-item="' + item.item.key + '" tabindex="0">' + label
-      + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span></li>';
+    return '<li data-source="kit" data-slot="' + slot + '" tabindex="0">' + label
+      + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span>'
+      + heirloomMark(item, colors) + '</li>';
   }).join('');
 
   this.el.inventory.innerHTML = p.inventory.length
     ? p.inventory.map((item, i) => {
       const spec = ITEMS[item.item.key] ?? item.item;
       const color = colors[item.color] ?? colors.text;
-      return '<li data-item="' + item.item.key + '" tabindex="0">'
+      return '<li data-source="pack" data-index="' + i + '" tabindex="0">'
         + '<kbd>' + (i + 1) + '</kbd> '
-        + '<span class="iname" style="color:' + color + '">' + escapeHtml(item.name) + '</span>'
+        + '<span class="iname" style="color:' + color + '">' + escapeHtml(item.name)
+        + '</span>' + heirloomMark(item, colors)
         + '<span class="icat">' + escapeHtml(itemCategory(spec)) + '</span></li>';
     }).join('')
     : '<li class="empty">(empty)</li>';
@@ -2692,20 +3124,38 @@ Panel.prototype.renderKit = function renderKit(game, colors) {
 Panel.prototype.bindTooltips = function bindTooltips(colors) {
   const tip = this.el.tooltip;
   const rows = [
-    ...this.el.inventory.querySelectorAll('[data-item]'),
-    ...this.el.worn.querySelectorAll('[data-item]'),
+    ...this.el.inventory.querySelectorAll('[data-source]'),
+    ...this.el.worn.querySelectorAll('[data-source]'),
   ];
 
+  const instanceFor = (row) => {
+    const p = this.game?.player;
+    if (!p) return null;
+    return row.dataset.source === 'kit'
+      ? p.equipment[row.dataset.slot]
+      : p.inventory[Number(row.dataset.index)];
+  };
+
   const show = (row) => {
-    const spec = ITEMS[row.dataset.item];
+    const instance = instanceFor(row);
+    const spec = instance && ITEMS[instance.item.key];
     if (!spec) return;
-    const d = describeItem(spec);
+    const d = describeItem(spec, instance.item);
     const meta = [d.category, d.rarity].filter(Boolean).join(' · ');
     tip.innerHTML =
       '<h3 style="color:' + (colors[spec.color] ?? colors.text) + '">'
       + escapeHtml(d.name) + '</h3>'
       + '<div class="tip-meta">' + escapeHtml(meta) + '</div>'
+      + (d.trait
+        ? '<div class="tip-trait" style="color:' + colors.mythic + '">'
+          + escapeHtml(d.trait.label) + '</div>'
+          + '<p class="tip-trait-text">' + escapeHtml(d.trait.text) + '</p>'
+        : '')
       + '<ul>' + d.effects.map((e) => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul>'
+      + (d.heirloom
+        ? '<p class="tip-heirloom" style="color:' + colors.revenant + '">+'
+          + d.heirloom.bonus + ' — ' + escapeHtml(d.heirloom.label) + '</p>'
+        : '')
       + '<p class="tip-lore">' + escapeHtml(d.lore) + '</p>';
     tip.hidden = false;
     tip.setAttribute('aria-hidden', 'false');
@@ -2735,6 +3185,13 @@ Panel.prototype.bindTooltips = function bindTooltips(colors) {
   }
   hide();
 };
+
+/** Gear taken off a predecessor wears its bonus openly in the list. */
+function heirloomMark(item, colors) {
+  const bonus = heirloomBonus(item.item.heirloom);
+  if (!bonus) return '';
+  return '<span class="heir" style="color:' + colors.revenant + '">+' + bonus + '</span>';
+}
 
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));

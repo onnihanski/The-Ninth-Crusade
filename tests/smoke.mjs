@@ -4,11 +4,16 @@
 import { Game } from '../src/game/game.js';
 import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, fire, descend } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
-import { makeItem, makeMonster } from '../src/game/entity.js';
+import { makeItem, makeMonster, makeRevenant } from '../src/game/entity.js';
 import { attack } from '../src/game/combat.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { Tiles } from '../src/world/tiles.js';
-import { effectivePower, effectiveDefense, effectiveSpeed, rangedProfile, canFire } from '../src/game/status.js';
+import {
+  effectivePower, effectiveDefense, effectiveSpeed, rangedProfile, canFire,
+  hasTrait, sanctuaryBonus, canBlock, tickBlock,
+} from '../src/game/status.js';
+import { TRAITS, heirloomBonus } from '../src/data/traits.js';
+import { attunedAmount } from '../src/game/effects.js';
 import { keyToIntent } from '../src/ui/input.js';
 import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate } from '../src/game/combat.js';
@@ -195,7 +200,8 @@ section('the dungeon remembers');
   const revenant = second.level.entities.find((e) => e.revenant);
   check('the dead crusader is waiting on the depth they died', Boolean(revenant));
   check('the revenant wears their name', revenant.name.includes(first.crusaderName));
-  check('the revenant still holds their relics', revenant.drops.includes('reliquaryPhial'));
+  check('the revenant still holds their relics',
+    revenant.drops.some((d) => d.key === 'reliquaryPhial'));
 
   invincible(second);
   killEntity(second, revenant);
@@ -434,9 +440,9 @@ section('the dead keep their kit');
   first.player.equipment.armour = makeItem({ key: 'mailHauberk', ...ITEMS.mailHauberk }, 0, 0);
   first.finishRun('a chorister');
 
+  const wornKeys = memorial.entries[0].equipment.map((p) => p.key);
   check('the memorial records what they were wearing',
-    memorial.entries[0].equipment.includes('censerFlail')
-    && memorial.entries[0].equipment.includes('mailHauberk'));
+    wornKeys.includes('censerFlail') && wornKeys.includes('mailHauberk'));
 
   const second = new Game({ seed: 701, memorial });
   second.buildLevel(5);
@@ -456,8 +462,9 @@ section('the dead keep their kit');
     revenant.defense === barefoot.defense + ITEMS.mailHauberk.equip.defense);
   check('the revenant is slowed by it, as you were',
     revenant.speed === 100 + ITEMS.censerFlail.equip.speed + ITEMS.mailHauberk.equip.speed);
+  const dropKeys = revenant.drops.map((d) => d.key);
   check('the revenant drops the whole kit',
-    revenant.drops.includes('censerFlail') && revenant.drops.includes('mailHauberk'));
+    dropKeys.includes('censerFlail') && dropKeys.includes('mailHauberk'));
 
   invincible(second);
   killEntity(second, revenant);
@@ -834,6 +841,398 @@ section('naming');
       && Boolean(MONSTERS[r.boss])));
   check('no monster name starts with an article',
     Object.values(MONSTERS).every((m) => !/^an? /.test(m.name)));
+}
+
+// --- special mechanics -----------------------------------------------------
+// Each trait is the identity of one piece of gear, so each gets tested as a
+// behaviour rather than as a number on a sheet.
+
+/** A game with one empty room, the player in it, and nothing else alive. */
+function arena(seed) {
+  const g = new Game({ seed, memorial: new Memorial(memoryStorage()) });
+  g.level.entities.filter((e) => e.ai).forEach((e) => g.level.remove(e));
+  const room = g.level.rooms[0];
+  g.player.x = room.cx;
+  g.player.y = room.cy;
+  g.player.maxHp = 9999;
+  g.player.hp = 9999;
+  g.level.updateFov(g.player, g.theme.fovRadius);
+  return { g, room };
+}
+
+function put(g, key, x, y, overrides = {}) {
+  const m = makeMonster({ ...MONSTERS[key], maxHp: 400, ...overrides }, x, y);
+  m.hp = m.maxHp;
+  g.level.add(m);
+  g.level.updateFov(g.player, g.theme.fovRadius);
+  return m;
+}
+
+function wield(g, key) {
+  g.player.equipment[ITEMS[key].equip.slot] = makeItem({ key, ...ITEMS[key] }, 0, 0);
+}
+
+section('cleave');
+{
+  const { g } = arena(9001);
+  const a = put(g, 'deserter', g.player.x + 1, g.player.y);
+  const b = put(g, 'deserter', g.player.x - 1, g.player.y);
+  const c = put(g, 'deserter', g.player.x, g.player.y + 1);
+  const far = put(g, 'deserter', g.player.x + 3, g.player.y);
+
+  wield(g, 'armingSword');
+  const before = [a, b, c].map((m) => m.hp);
+  moveOrAttack(g, g.player, 1, 0);
+  check('an ordinary sword hits only what you swung at',
+    a.hp < before[0] && b.hp === before[1] && c.hp === before[2]);
+
+  wield(g, 'martyrsGreatsword');
+  check('the greatsword has cleave', hasTrait(g.player, 'cleave'));
+  const mid = [a, b, c, far].map((m) => m.hp);
+  moveOrAttack(g, g.player, 1, 0);
+  check('cleaving hits everything adjacent at once',
+    a.hp < mid[0] && b.hp < mid[1] && c.hp < mid[2]);
+  check('but nothing out of reach', far.hp === mid[3]);
+  check('and it says so', g.messages.some((m) => m.text.includes('sweep through')));
+
+  // One swing, one turn: cleave must not become several turns of attacks.
+  const solo = arena(9002);
+  wield(solo.g, 'martyrsGreatsword');
+  const only = put(solo.g, 'deserter', solo.g.player.x + 1, solo.g.player.y);
+  check('cleaving with one target is just an attack',
+    moveOrAttack(solo.g, solo.g.player, 1, 0) === true && only.hp < only.maxHp);
+}
+
+section('reach');
+{
+  const { g } = arena(9003);
+  wield(g, 'heraldsPollaxe');
+  check('the pollaxe has reach', hasTrait(g.player, 'reach'));
+
+  const target = put(g, 'deserter', g.player.x + 2, g.player.y);
+  const startX = g.player.x;
+  const before = target.hp;
+  check('you strike two tiles away instead of stepping',
+    moveOrAttack(g, g.player, 1, 0) === true && target.hp < before && g.player.x === startX);
+
+  // Without reach the same move is a step, not a strike.
+  const plain = arena(9004);
+  wield(plain.g, 'armingSword');
+  const other = put(plain.g, 'deserter', plain.g.player.x + 2, plain.g.player.y);
+  const wasX = plain.g.player.x;
+  moveOrAttack(plain.g, plain.g.player, 1, 0);
+  check('an ordinary weapon just walks', plain.g.player.x === wasX + 1 && other.hp === other.maxHp);
+
+  check('reach does not strike through stone', (() => {
+    const w = arena(9005);
+    wield(w.g, 'heraldsPollaxe');
+    // Aim at a wall: the intervening tile is not walkable, so nothing happens.
+    const room = w.room;
+    w.g.player.x = room.x;
+    w.g.player.y = room.cy;
+    const behind = put(w.g, 'deserter', room.x - 2, room.cy);
+    const hp = behind.hp;
+    moveOrAttack(w.g, w.g.player, -1, 0);
+    return behind.hp === hp;
+  })());
+}
+
+section('piercing shot');
+{
+  const { g, room } = arena(9006);
+  wield(g, 'arbalest');
+  check('the arbalest pierces', hasTrait(g.player, 'pierce'));
+
+  g.player.x = room.x + 1;
+  g.player.y = room.cy;
+  const inLine = [1, 2, 3].map((n) => put(g, 'deserter', g.player.x + n, g.player.y));
+  const aside = put(g, 'deserter', g.player.x + 1, g.player.y + 2);
+  const before = inLine.map((m) => m.hp);
+
+  check('one shot goes through the whole line', fire(g, g.player) === true
+    && inLine.every((m, i) => m.hp < before[i]));
+  check('it leaves what is not in the line alone', aside.hp === aside.maxHp);
+  check('it is still one shot and one reload', !canFire(g.player));
+  check('and it says so', g.messages.some((m) => m.text.includes('goes through')));
+
+  check('a plain crossbow hits only the first thing', (() => {
+    const p = arena(9007);
+    wield(p.g, 'huntingCrossbow');
+    p.g.player.x = p.room.x + 1;
+    p.g.player.y = p.room.cy;
+    const row = [1, 2].map((n) => put(p.g, 'deserter', p.g.player.x + n, p.g.player.y));
+    const hp = row.map((m) => m.hp);
+    fire(p.g, p.g.player);
+    return row[0].hp < hp[0] && row[1].hp === hp[1];
+  })());
+}
+
+section('block');
+{
+  const { g } = arena(9008);
+  wield(g, 'towerShield');
+  check('the tower shield blocks', hasTrait(g.player, 'block') && canBlock(g.player));
+
+  const foe = put(g, 'flagellant', g.player.x + 1, g.player.y);
+  const full = g.player.hp;
+  attack(g, foe, g.player);
+  check('the first blow is stopped outright', g.player.hp === full);
+  check('the log says the shield took it',
+    g.messages.some((m) => m.text.includes('takes all of it')));
+  check('the shield is down afterwards', !canBlock(g.player));
+
+  attack(g, foe, g.player);
+  check('the next blow gets through', g.player.hp < full);
+
+  // Measure recovery in peace: while anything is still swinging, the shield is
+  // spent again the instant it comes back, which is correct but unobservable.
+  g.level.remove(foe);
+  let turns = 0;
+  while (!canBlock(g.player) && turns < 40) { g.playerActed(); turns++; }
+  check('the shield comes back up after a few turns (' + turns + ')',
+    canBlock(g.player) && turns > 1 && turns < 20);
+
+  check('blocking is periodic, not permanent', (() => {
+    // Tick the shield directly: a live attacker would also be swinging on its
+    // own turns and spending the block before this loop could observe it.
+    const s2 = arena(9101);
+    wield(s2.g, 'towerShield');
+    const attacker = put(s2.g, 'flagellant', s2.g.player.x + 1, s2.g.player.y);
+    attacker.ai = null;
+    let blocks = 0;
+    let through = 0;
+    for (let i = 0; i < 30; i++) {
+      if (canBlock(s2.g.player)) blocks++; else through++;
+      attack(s2.g, attacker, s2.g.player);
+      tickBlock(s2.g.player);
+    }
+    return blocks >= 3 && through > blocks;    // rare relief, not immunity
+  })());
+}
+
+section('riposte');
+{
+  const { g } = arena(9009);
+  wield(g, 'aegisOfAmbrose');
+  g.player.defense = 40;                       // guarantee the blow is absorbed
+  check('the aegis ripostes', hasTrait(g.player, 'riposte'));
+
+  const foe = put(g, 'campDog', g.player.x + 1, g.player.y);
+  const foeHp = foe.hp;
+  attack(g, foe, g.player);
+  check('a blow that is fully turned aside is answered', foe.hp < foeHp);
+  check('the answer is named', g.messages.some((m) => m.text.includes('You answer')));
+
+  check('a riposte cannot provoke a riposte', (() => {
+    // Both sides ripostiing would recurse forever if it were not guarded.
+    const r = arena(9010);
+    wield(r.g, 'aegisOfAmbrose');
+    r.g.player.defense = 40;
+    const other = put(r.g, 'campDog', r.g.player.x + 1, r.g.player.y, { defense: 40 });
+    other.equipment = { shield: makeItem({ key: 'aegisOfAmbrose', ...ITEMS.aegisOfAmbrose }, 0, 0) };
+    attack(r.g, other, r.g.player);
+    return true;                               // reaching here at all is the test
+  })());
+
+  check('a solid hit is not answered', (() => {
+    const q = arena(9011);
+    wield(q.g, 'aegisOfAmbrose');
+    q.g.player.defense = 0;
+    const brute = put(q.g, 'ogre', q.g.player.x + 1, q.g.player.y, { power: 40 });
+    const hp = brute.hp;
+    attack(q.g, brute, q.g.player);
+    return brute.hp === hp;
+  })());
+}
+
+section('sanctuary');
+{
+  const { g } = arena(9012);
+  wield(g, 'vestmentOfTheChoir');
+  check('the vestment grants sanctuary', hasTrait(g.player, 'sanctuary'));
+
+  const base = effectiveDefense(g.player);
+  for (let i = 0; i < 6; i++) { wait(); g.playerActed(); }
+  const held = effectiveDefense(g.player);
+  check('holding your ground hardens you', held > base);
+  check('and the panel can see it', sanctuaryBonus(g.player) > 0);
+
+  moveOrAttack(g, g.player, 1, 0);
+  g.playerActed();
+  check('moving forgets all of it', sanctuaryBonus(g.player) === 0);
+
+  for (let i = 0; i < 60; i++) { wait(); g.playerActed(); }
+  check('it does not grow without limit', sanctuaryBonus(g.player) <= 4);
+  check('gear without the trait never gains it', (() => {
+    const n = arena(9013);
+    wield(n.g, 'ossuaryPlate');
+    for (let i = 0; i < 10; i++) { wait(); n.g.playerActed(); }
+    return sanctuaryBonus(n.g.player) === 0;
+  })());
+}
+
+section('attunement');
+{
+  const g = new Game({ seed: 9014, memorial: new Memorial(memoryStorage()) });
+  const phial = makeItem({ key: 'reliquaryPhial', ...ITEMS.reliquaryPhial }, 0, 0);
+  g.player.inventory.push(phial);
+
+  check('a fresh relic is worth its printed value',
+    attunedAmount(phial) === ITEMS.reliquaryPhial.use.amount);
+
+  for (let i = 0; i < 45; i++) g.playerActed();
+  check('carrying it unused makes it stronger',
+    attunedAmount(phial) > ITEMS.reliquaryPhial.use.amount);
+  check('the clock is the turns it spent in the pack', phial.item.carried === 45);
+
+  for (let i = 0; i < 600; i++) g.playerActed();
+  check('attunement is capped',
+    attunedAmount(phial) === ITEMS.reliquaryPhial.use.amount + ITEMS.reliquaryPhial.use.attune.max);
+
+  check('an attuned phial actually heals more', (() => {
+    const h = new Game({ seed: 9015, memorial: new Memorial(memoryStorage()) });
+    h.player.maxHp = 500;
+    const fresh = makeItem({ key: 'reliquaryPhial', ...ITEMS.reliquaryPhial }, 0, 0);
+    h.player.inventory.push(fresh);
+    h.player.hp = 100;
+    useItem(h, h.player, 0);
+    const plain = h.player.hp - 100;
+
+    const aged = makeItem({ key: 'reliquaryPhial', ...ITEMS.reliquaryPhial }, 0, 0);
+    aged.item.carried = 150;
+    h.player.inventory.push(aged);
+    h.player.hp = 100;
+    useItem(h, h.player, 0);
+    return (h.player.hp - 100) > plain;
+  })());
+
+  check('gear does not attune, only relics', (() => {
+    const k = new Game({ seed: 9016, memorial: new Memorial(memoryStorage()) });
+    const sword = makeItem({ key: 'armingSword', ...ITEMS.armingSword }, 0, 0);
+    k.player.inventory.push(sword);
+    for (let i = 0; i < 40; i++) k.playerActed();
+    return (sword.item.carried ?? 0) === 0;
+  })());
+}
+
+section('echo');
+{
+  const { g, room } = arena(9017);
+  g.player.x = room.cx;
+  g.player.y = room.cy;
+  const foe = put(g, 'deserter', g.player.x + 2, g.player.y);
+  g.player.inventory.push(makeItem({ key: 'sparkOfTheChoir', ...ITEMS.sparkOfTheChoir }, 0, 0));
+
+  const before = foe.hp;
+  useItem(g, g.player, 0);
+  const afterFirst = foe.hp;
+  check('the spark strikes at once', afterFirst < before);
+  check('and promises a second', g.echoes.length === 1
+    && g.messages.some((m) => m.text.includes('takes up the note')));
+
+  let waited = 0;
+  while (g.echoes.length && waited < 12) { wait(); g.playerActed(); waited++; }
+  check('the echo lands a few turns later (' + waited + ')',
+    foe.hp < afterFirst && waited === ITEMS.sparkOfTheChoir.use.echo);
+  check('and does not repeat forever', g.echoes.length === 0);
+
+  check('an echo does not carry between floors', (() => {
+    const d = arena(9018);
+    d.g.scheduleEcho({ amount: 5, range: 6, turns: 3 });
+    d.g.buildLevel(2);
+    return d.g.echoes.length === 0;
+  })());
+}
+
+// --- heirlooms -------------------------------------------------------------
+section('gear remembers who carried it');
+{
+  const memorial = new Memorial(memoryStorage());
+  const first = new Game({ seed: 9020, memorial });
+  first.buildLevel(9);                         // died deep, so the bonus is real
+  first.player.equipment.weapon = makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0);
+  first.finishRun('the Voice in the Vaults');
+
+  const second = invincible(new Game({ seed: 9021, memorial }));
+  second.buildLevel(9);
+  const revenant = second.level.entities.find((e) => e.revenant);
+  check('a predecessor is waiting with your old weapon', Boolean(revenant));
+
+  killEntity(second, revenant);
+  const reclaimed = second.level.entities.find((e) => e.item?.key === 'censerFlail');
+  check('killing them drops it back', Boolean(reclaimed));
+  check('and it now carries their name', Boolean(reclaimed.item.heirloom)
+    && reclaimed.item.heirloom.of === first.crusaderName);
+  check('the bonus scales with how deep they got',
+    heirloomBonus(reclaimed.item.heirloom) === Math.min(4, Math.floor(9 / 3)));
+  check('the drop is announced as something more than loot',
+    second.messages.some((m) => m.text.includes('knows your name')));
+
+  // Wielding it must actually be worth more than a fresh one.
+  const fresh = new Game({ seed: 9022, memorial: new Memorial(memoryStorage()) });
+  fresh.player.equipment.weapon = makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0);
+  const plainPower = effectivePower(fresh.player);
+  fresh.player.equipment.weapon = reclaimed;
+  check('an heirloom hits harder than the same weapon fresh',
+    effectivePower(fresh.player) === plainPower + heirloomBonus(reclaimed.item.heirloom));
+
+  check('an heirloom shield adds defense, not power', (() => {
+    const t = new Game({ seed: 9023, memorial: new Memorial(memoryStorage()) });
+    const shield = makeItem({ key: 'towerShield', ...ITEMS.towerShield }, 0, 0);
+    shield.item.heirloom = { of: 'Pilgrim Test', deepest: 12, marks: 1 };
+    const powerBefore = effectivePower(t.player);
+    const defenseBefore = effectiveDefense(t.player);
+    t.player.equipment.shield = shield;
+    return effectivePower(t.player) === powerBefore
+      && effectiveDefense(t.player) > defenseBefore + ITEMS.towerShield.equip.defense - 1;
+  })());
+
+  check('an heirloom bow shoots harder', (() => {
+    const b = new Game({ seed: 9024, memorial: new Memorial(memoryStorage()) });
+    b.player.equipment.weapon = makeItem({ key: 'arbalest', ...ITEMS.arbalest }, 0, 0);
+    const plain = rangedProfile(b.player).power;
+    b.player.equipment.weapon.item.heirloom = { of: 'Pilgrim Test', deepest: 12, marks: 1 };
+    return rangedProfile(b.player).power > plain;
+  })());
+
+  check('the history deepens each time it is lost and reclaimed', (() => {
+    const m2 = new Memorial(memoryStorage());
+    m2.record({
+      name: 'Pilgrim Second', depth: 6, relics: [], turn: 1, at: Date.now(),
+      equipment: [{ key: 'censerFlail', heirloom: { of: 'Pilgrim First', deepest: 4, marks: 1 } }],
+    });
+    const rev = makeRevenant(m2.entries[0], 0, 0);
+    const drop = rev.drops.find((d) => d.key === 'censerFlail');
+    return drop.heirloom.marks === 2 && drop.heirloom.deepest === 6;
+  })());
+
+  check('memorial entries written before heirlooms existed still work', (() => {
+    const legacy = new Memorial(memoryStorage());
+    legacy.record({
+      name: 'Pilgrim Ancient', depth: 5, relics: [], turn: 1, at: Date.now(),
+      equipment: ['mailHauberk'],              // the old bare-key shape
+    });
+    const rev = makeRevenant(legacy.entries[0], 0, 0);
+    const drop = rev.drops.find((d) => d.key === 'mailHauberk');
+    return Boolean(drop) && drop.heirloom.marks === 1 && drop.heirloom.deepest === 5;
+  })());
+}
+
+section('traits are described where they are implemented');
+{
+  const used = new Set(Object.values(ITEMS).map((i) => i.trait).filter(Boolean));
+  check('every trait on an item has a description',
+    [...used].every((t) => Boolean(TRAITS[t]?.label && TRAITS[t]?.text)));
+  check('every described trait is actually on something',
+    Object.keys(TRAITS).every((t) => used.has(t)));
+  check('all eight special mechanics are present', used.size === 6
+    && Object.values(ITEMS).some((i) => i.use?.attune)
+    && Object.values(ITEMS).some((i) => i.use?.echo));
+  check('briefs surface the trait',
+    describeItem(ITEMS.towerShield).trait.label === 'Block');
+  check('briefs surface an heirloom when one exists',
+    describeItem(ITEMS.censerFlail, { heirloom: { of: 'X', deepest: 9, marks: 2 } })
+      .heirloom.bonus === 3);
 }
 
 // --- long random playthroughs ----------------------------------------------

@@ -6,6 +6,8 @@
 // them they are the only place the world gets described at any length, so they
 // are worth writing properly.
 
+import { TRAITS, heirloomBonus, heirloomLabel, CLINCH_PENALTY } from './traits.js';
+
 // Rarity is a spawn-frequency band and a colour, not a stat. It reads at a
 // glance on the floor, which is the whole point of colouring loot.
 const RARITY_COLOR = {
@@ -20,9 +22,9 @@ const RARITY_COLOR = {
  * thing carrying it, which is what makes bosses worth more than their seal.
  */
 function gear({ name, glyph, slot, rarity, power = 0, defense = 0, speed = 0,
-  ranged = null, minDepth = 1, weight = 0, flavour, lore }) {
+  ranged = null, trait = null, minDepth = 1, weight = 0, flavour, lore }) {
   return {
-    name, glyph, rarity,
+    name, glyph, rarity, trait,
     color: RARITY_COLOR[rarity],
     bossOnly: rarity === 'sacred',
     weight: rarity === 'sacred' ? 0 : weight,
@@ -36,7 +38,7 @@ export const ITEMS = {
   // -- Relics: spent, not worn ----------------------------------------------
   reliquaryPhial: {
     name: 'reliquary phial', glyph: '!', color: 'item',
-    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
+    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10, attune: { per: 20, max: 6 } },
     flavour: 'Contents: mostly saint.',
     lore: 'Ground bone in consecrated water, bottled by an order that kept '
       + 'excellent records and no explanations. It works. Nobody has ever '
@@ -44,7 +46,8 @@ export const ITEMS = {
   },
   sparkOfTheChoir: {
     name: 'spark of the choir', glyph: '?', color: 'item',
-    weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
+    weight: 8, minDepth: 2,
+    use: { kind: 'smite', amount: 12, range: 6, attune: { per: 20, max: 6 }, echo: 3 },
     flavour: 'One held note, released.',
     lore: 'A single note from the Choir, caught in wax before it could finish. '
       + 'Breaking the seal finishes it. Whatever it was aimed at when it was '
@@ -52,7 +55,8 @@ export const ITEMS = {
   },
   psalmOfWard: {
     name: 'psalm of ward', glyph: '?', color: 'item',
-    weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
+    weight: 7, minDepth: 3,
+    use: { kind: 'ward', amount: 3, turns: 12, attune: { per: 30, max: 3 } },
     flavour: 'Sung badly, it still works.',
     lore: 'Twelve lines that make you harder to reach. The crusade issues them '
       + 'to everyone and teaches the tune to nobody, on the theory that panic '
@@ -102,7 +106,7 @@ export const ITEMS = {
   }),
   martyrsGreatsword: gear({
     name: "martyr's greatsword", glyph: ')', slot: 'weapon', rarity: 'rare',
-    power: 7, speed: -25, minDepth: 8, weight: 3,
+    power: 7, speed: -25, trait: 'cleave', minDepth: 8, weight: 3,
     flavour: 'Two hands, one conviction, no hurry.',
     lore: 'Too long to draw in a corridor and too heavy to swing twice, which '
       + 'has never once discouraged anyone. Every martyr it is named for died '
@@ -110,7 +114,7 @@ export const ITEMS = {
   }),
   heraldsPollaxe: gear({
     name: "the Herald's pollaxe", glyph: ')', slot: 'weapon', rarity: 'sacred',
-    power: 6, speed: -5,
+    power: 5, speed: -5, trait: 'reach',
     flavour: 'He read your name off a list. This is the rest of the sentence.',
     lore: 'Axe, hammer and spike on one shaft: an argument with three '
       + 'conclusions. The Herald kept it immaculate and used it rarely, which '
@@ -142,7 +146,7 @@ export const ITEMS = {
   }),
   arbalest: gear({
     name: 'arbalest', glyph: '}', slot: 'weapon', rarity: 'rare',
-    power: 2, ranged: { power: 9, range: 7, reload: 3 }, speed: -10,
+    power: 2, ranged: { power: 9, range: 7, reload: 3 }, speed: -10, trait: 'pierce',
     minDepth: 7, weight: 3,
     flavour: 'Punches through a wall\'s worth of argument.',
     lore: 'Steel-limbed, cranked with a windlass, banned twice by councils '
@@ -185,7 +189,7 @@ export const ITEMS = {
   }),
   towerShield: gear({
     name: 'tower shield', glyph: '(', slot: 'shield', rarity: 'rare',
-    defense: 4, speed: -20, minDepth: 8, weight: 3,
+    defense: 4, speed: -20, trait: 'block', minDepth: 8, weight: 3,
     flavour: 'Behind this, very little happens to you. Slowly.',
     lore: 'Chest to shin, banded in iron, heavy enough to change how you '
       + 'stand. Men have won fights behind these by simply outlasting the '
@@ -193,7 +197,7 @@ export const ITEMS = {
   }),
   aegisOfAmbrose: gear({
     name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
-    defense: 4, speed: -5,
+    defense: 4, speed: -5, trait: 'riposte',
     flavour: 'It did not work for him either, but it took longer.',
     lore: 'The saint was interred holding it and declined to let go. It weighs '
       + 'a quarter of what it looks like, and the arm straps adjust themselves '
@@ -242,7 +246,7 @@ export const ITEMS = {
   }),
   vestmentOfTheChoir: gear({
     name: 'vestment of the choir', glyph: '[', slot: 'armour', rarity: 'sacred',
-    defense: 5,
+    defense: 5, trait: 'sanctuary',
     flavour: 'Weightless. Whatever is holding it up is not the cloth.',
     lore: 'Plain white wool, unadorned, of a weight that suggests nothing is '
       + 'inside it. Blows land on it and stop. The wool does not move, and '
@@ -299,7 +303,7 @@ export function itemCategory(spec) {
  * Everything the hover panel needs, derived from the data rather than written
  * twice: retuning a number in this file updates what the game says about it.
  */
-export function describeItem(spec) {
+export function describeItem(spec, instance = null) {
   const effects = [];
   const equip = spec.equip;
 
@@ -329,13 +333,31 @@ export function describeItem(spec) {
     effects.push('Spent on use');
   }
 
+  if (use?.attune) {
+    effects.push('Grows stronger the longer it goes unused: +1 every '
+      + use.attune.per + ' turns carried, up to +' + use.attune.max);
+  }
+  if (use?.echo) effects.push('Sounds a second time, ' + use.echo + ' turns later');
+
   if (spec.seal) effects.push('Opens this region\'s gate. Kept, never spent, and never takes pack space');
   if (spec.victory) effects.push('Ends the crusade the moment you pick it up');
+
+  if (spec.trait === 'reach') {
+    effects.push('Strikes at two tiles, and at ' + CLINCH_PENALTY
+      + ' less power against anything already adjacent');
+  }
+
+  const trait = spec.trait ? TRAITS[spec.trait] : null;
+  const heirloom = instance?.heirloom ?? null;
 
   return {
     name: spec.name,
     category: itemCategory(spec),
     rarity: spec.rarity ?? null,
+    trait: trait ? { label: trait.label, text: trait.text } : null,
+    heirloom: heirloom
+      ? { bonus: heirloomBonus(heirloom), label: heirloomLabel(heirloom) }
+      : null,
     effects,
     lore: spec.lore ?? spec.flavour ?? '',
   };

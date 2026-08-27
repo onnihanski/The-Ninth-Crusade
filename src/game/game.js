@@ -4,8 +4,9 @@ import { chebyshev } from '../engine/grid.js';
 import { Level } from '../world/level.js';
 import { Tiles } from '../world/tiles.js';
 import { makePlayer, makeMonster, makeItem, makeRevenant } from './entity.js';
+import { smiteNearest } from './effects.js';
 import { takeAiTurn } from './ai.js';
-import { tickStatuses, tickReload, effectiveSpeed, equipped } from './status.js';
+import { tickStatuses, tickReload, tickBlock, effectiveSpeed, equipped } from './status.js';
 import { tickRegeneration } from './progress.js';
 import { Memorial } from './memorial.js';
 import { MONSTERS, monsterTable } from '../data/monsters.js';
@@ -37,6 +38,7 @@ export class Game {
     this.messages = [];
     this.state = 'playing';
     this.turn = 0;
+    this.echoes = [];
     this.runRecorded = false;
 
     this.crusaderName = crusaderName(this.rng);
@@ -66,6 +68,7 @@ export class Game {
     this.level.add(this.player);
 
     this.wanderers = 0;
+    this.echoes = [];              // a note does not carry between floors
     this.setUpGate(depth);
     this.populate(depth);
     this.summonTheRemembered(depth);
@@ -210,18 +213,25 @@ export class Game {
     this.finishRun('walked out');
   }
 
-  /** Spill a dead thing's drops onto the floor where it fell. */
+  /**
+   * Spill a dead thing's drops onto the floor where it fell. A drop is either a
+   * bare item key (bosses) or `{ key, heirloom }` (anything taken off a
+   * revenant, which carries the history of who died in it).
+   */
   spillDrops(entity) {
     if (!entity.drops?.length) return;
-    for (const key of entity.drops) {
+    for (const drop of entity.drops) {
+      const { key, heirloom } = typeof drop === 'string' ? { key: drop, heirloom: null } : drop;
       const spec = ITEMS[key];
       if (!spec) continue;
       const spot = this.level.isWalkable(entity.x, entity.y)
         ? { x: entity.x, y: entity.y }
         : this.randomOpenTile();
       if (!spot) continue;
-      this.level.add(makeItem({ key, ...spec }, spot.x, spot.y));
-      this.log('It drops ' + spec.name + '.', 'notable');
+
+      this.level.add(makeItem({ key, ...spec, heirloom }, spot.x, spot.y));
+      this.log('It drops ' + spec.name + (heirloom ? ', and it knows your name.' : '.'),
+        heirloom ? 'mythic' : 'notable');
     }
     entity.drops = [];
   }
@@ -243,7 +253,10 @@ export class Game {
       relics: this.player.inventory
         .filter((i) => i.item?.key && !i.item.victory)
         .map((i) => i.item.key),
-      equipment: equipped(this.player).map((i) => i.item.key),
+      equipment: equipped(this.player).map((i) => ({
+        key: i.item.key,
+        heirloom: i.item.heirloom ?? null,
+      })),
       at: Date.now(),
     });
   }
@@ -260,8 +273,12 @@ export class Game {
     this.turn++;
     tickStatuses(this, this.player);
     tickReload(this.player);
+    tickBlock(this.player);
     tickRegeneration(this.player);
     this.hintRegeneration();
+    this.tickStillness();
+    this.tickAttunement();
+    this.tickEchoes();
     this.maybeWander();
     this.runMonsterTurns();
     this._distCache = null;
@@ -301,6 +318,47 @@ export class Game {
       }
       this._distCache = null;
     }
+  }
+
+  /**
+   * Sanctuary counts turns held in one place. Tracked here rather than in the
+   * move action because every other way of spending a turn counts as standing
+   * still, and only actually moving should reset it.
+   */
+  tickStillness() {
+    const moved = this._lastPos
+      && (this._lastPos.x !== this.player.x || this._lastPos.y !== this.player.y);
+    this.player.stillTurns = moved ? 0 : (this.player.stillTurns ?? 0) + 1;
+    this._lastPos = { x: this.player.x, y: this.player.y };
+  }
+
+  /** Relics grow while they sit unused in the pack. */
+  tickAttunement() {
+    for (const item of this.player.inventory) {
+      if (item.item.use?.attune) item.item.carried = (item.item.carried ?? 0) + 1;
+    }
+  }
+
+  /** A note sounded earlier, finishing on its own and picking its own target. */
+  tickEchoes() {
+    if (!this.echoes.length) return;
+    const due = [];
+    this.echoes = this.echoes.filter((echo) => {
+      echo.turns--;
+      if (echo.turns > 0) return true;
+      due.push(echo);
+      return false;
+    });
+
+    for (const echo of due) {
+      const struck = smiteNearest(this, this.player, echo.amount, echo.range,
+        'The note finishes itself against');
+      if (!struck) this.log('Somewhere behind you, a note finishes alone.', 'textDim');
+    }
+  }
+
+  scheduleEcho(echo) {
+    this.echoes.push({ ...echo });
   }
 
   /**
