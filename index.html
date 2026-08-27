@@ -250,6 +250,39 @@
   </aside>
 </main>
 <div id="tooltip" role="tooltip" aria-hidden="true" hidden></div>
+<script id="file-guard">
+// Opened straight out of a folder, with no server?
+//
+// This page loads the game as ES modules, and every browser blocks module
+// loading over file:// as a cross-origin read. That is not something the page
+// can work around -- but dist/index.html is the same game built into one
+// self-contained file, and it does run that way. Send them there.
+(function () {
+  if (window.location.protocol !== 'file:') return;
+
+  var single = './dist/index.html';
+  var style = 'font:14px/1.6 ui-monospace,Menlo,Consolas,monospace;'
+    + 'color:#cfc7b8;background:#0a0a0c;margin:0;padding:12vh 8vw;';
+  document.body.setAttribute('style', style);
+  document.body.innerHTML =
+    '<h1 style="font-size:16px;letter-spacing:.05em;margin:0 0 14px">THE NINTH CRUSADE</h1>'
+    + '<p style="max-width:60ch;margin:0 0 10px">This file loads the game from '
+    + '<code>src/</code>, and browsers refuse to load code that way when a page is '
+    + 'opened from a folder instead of served over http. Nothing is wrong with '
+    + 'your copy.</p>'
+    + '<p style="max-width:60ch;margin:0 0 18px">Opening the single-file build '
+    + 'instead, which has no such problem&hellip;</p>'
+    + '<p><a href="' + single + '" style="color:#e0b25c;font-size:15px">'
+    + 'dist/index.html &mdash; click here if nothing happens</a></p>'
+    + '<p style="max-width:60ch;color:#75705f;margin-top:22px">That one file is '
+    + 'the whole game. Copy it anywhere and open it; no server, no install, no '
+    + 'network.</p>';
+
+  // Give the message a moment to be read, then go. If dist/ is missing the
+  // link above is still there to explain what happened.
+  window.setTimeout(function () { window.location.replace(single); }, 1400);
+}());
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

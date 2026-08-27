@@ -43,11 +43,20 @@ const bundle = order(entry)
   })
   .join('\n\n');
 
-const html = readFileSync(resolve(root, 'index.html'), 'utf8')
-  .replace(
-    /<script type="module" src="\.\/src\/main\.js"><\/script>/,
-    '<script type="module">\n' + bundle + '\n</script>',
-  );
+const source = readFileSync(resolve(root, 'index.html'), 'utf8');
+
+// Strip the file:// guard. It exists to redirect people from the module-loading
+// page to this one; leaving it in would make this file redirect to itself.
+const guarded = source.replace(/<script id="file-guard">[\s\S]*?<\/script>\s*/, '');
+if (guarded === source) {
+  console.error('build: file-guard script not found -- did index.html change?');
+  process.exit(1);
+}
+
+const html = guarded.replace(
+  /<script type="module" src="\.\/src\/main\.js"><\/script>/,
+  '<script type="module">\n' + bundle + '\n</script>',
+);
 
 if (html.includes('src="./src/main.js"')) {
   console.error('build: failed to replace the module script tag');

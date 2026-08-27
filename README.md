@@ -15,18 +15,31 @@ you get your relics back.
 Nobody returns to the first two floors, though. Crusaders who died in the mud
 outside the walls do not come back — see [Difficulty](#difficulty).
 
-## Running it
+## Playing it
 
-ES modules need to be served over HTTP:
+**Just want to play?** Open **`dist/index.html`**. That one file is the entire
+game — copy it to any machine, double-click it, and it runs. No server, no
+install, no network.
+
+If you open the `index.html` in the top folder instead, it will tell you what
+happened and send you to `dist/index.html` automatically. That top-level file
+loads the game from `src/` as separate ES modules, and every browser refuses to
+load modules from a folder opened directly — the console says
+*"Cross-Origin Request Blocked ... CORS request not http"*. Nothing is wrong
+with the copy; browsers simply will not do it.
+
+### Working on it
+
+To edit the source and refresh, serve the folder over http:
 
 ```
 python3 -m http.server 8000     # then open http://localhost:8000
 ```
 
-Or build the single-file version and just open it:
+Then rebuild the single file whenever you want to share it:
 
 ```
-node tools/build.mjs            # writes dist/index.html, no server needed
+node tools/build.mjs            # writes dist/index.html and dist/embed.html
 ```
 
 Tests are headless and dependency-free:
@@ -348,10 +361,14 @@ flavour text define what the game *is*, with no changes needed anywhere in
 - **Bosses with mechanics** — right now they are large monsters; they should
   each break one rule of the game
 
-## Playable build
+## Builds
 
 `node tools/build.mjs` writes two files:
 
-- `dist/index.html` — the whole game in one self-contained file; open it directly
+- `dist/index.html` — the whole game in one self-contained file. This is the one
+  to copy between machines; it works from `file://`.
 - `dist/embed.html` — the same, without the document wrapper, for hosts that
-  supply their own `<head>`
+  supply their own `<head>`.
+
+Both inline all 28 modules, so neither has the module-loading problem the
+top-level page has.
