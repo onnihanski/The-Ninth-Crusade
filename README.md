@@ -12,6 +12,9 @@ runs they are still down there, on the floor where they fell, wearing their own
 name and holding whatever they were carrying. Killing your predecessor is how
 you get your relics back.
 
+Nobody returns to the first two floors, though. Crusaders who died in the mud
+outside the walls do not come back — see [Difficulty](#difficulty).
+
 ## Running it
 
 ES modules need to be served over HTTP:
@@ -56,6 +59,15 @@ Seals are kept, not spent. Relics are spent: a **reliquary phial** heals, a
 **spark of the choir** smites the nearest thing you can see, a **psalm of ward**
 makes you harder to reach for a while, and a **step of the absent** puts you
 somewhere else entirely.
+
+## Starting out
+
+You are issued an arming sword and a padded gambeson, 26 hit points, and no
+advice. Depth 1 carries three monsters and nothing wanders onto it.
+
+Health comes back on its own, slowly — one point every twenty turns — so
+backing out of a fight and waiting is a real move, and usually the right one.
+The game mentions this the first time you are badly hurt.
 
 ## Levelling
 
@@ -113,15 +125,36 @@ node tools/balance.mjs 250
 
 It runs two policies — `clear` (fights the floor, takes the loot, then descends)
 and `dive` (fights what is in the way and little else). As of the current
-numbers, a thorough crusader wins about **22%** of the time, reaches a median
-depth of 9 at a median level of 10, and dies on every floor of the dungeon
+numbers, a thorough crusader wins about **34%** of the time, reaches a median
+depth of 10 at a median level of 11, and dies on every floor of the dungeon
 rather than piling up against one wall. A hurried one dies at the first boss,
 every time, which is the intended lesson.
 
-Re-run it after touching any number in `data/` or `progress.js`. It has already
-caught three things that reading the code did not: fourteen monsters on depth 1,
-a defense stat that outran every monster in the game, and a softlock where a
-full pack made a boss floor impossible to leave.
+Re-run it after touching any number in `data/` or `progress.js`. It has caught
+four things that reading the code did not: fourteen monsters on depth 1, a
+defense stat that outran every monster in the game, a softlock where a full
+pack made a boss floor impossible to leave, and the difficulty spiral below.
+
+### Difficulty
+
+The harness measures a bot that rests to full health whenever it is safe. A new
+player does not know that resting is possible, so early playtesting told a very
+different story: **95% of first runs died on depth 1**, and it got worse from
+there, because every death put a revenant back on depth 1 for the next run.
+Enemy hit points on the opening floor went from 30 to 95 across a handful of
+runs, and the game became unwinnable in three deaths.
+
+Four things fix it, and all four are load-bearing:
+
+- a crusader is **issued a weapon and armour** instead of starting bare-handed
+- **depth 1 carries three monsters**, and the curve catches up by mid-dungeon
+- **nothing wanders onto depth 1** — wanderers price resting, and are only an
+  ambush to someone who has not learned that resting exists
+- **no revenant ever appears above depth 3**, so dying can never make the
+  opening harder than it was the first time
+
+A naive player who never rests now dies on depth 1 about 15% of the time, and
+that number is flat across a session instead of climbing to 100%.
 
 ## The dungeon
 
@@ -170,7 +203,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    109 assertions, including a full run to depth 12
+tests/smoke.mjs    120 assertions, including a full run to depth 12
 ```
 
 ### Tone

@@ -23,17 +23,24 @@ export function makeEntity(props = {}) {
 }
 
 export function makePlayer(x, y, name) {
-  return makeEntity({
+  const player = makeEntity({
     x, y,
     glyph: '@', color: 'player', name: name ?? 'you',
     blocks: true, speed: 100,
-    maxHp: 22, hp: 22, power: 5, defense: 1,
+    maxHp: 26, hp: 26, power: 5, defense: 1,
     level: 1, xp: 0,
     inventory: [],
     seals: [],
     equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
+
+  // The crusade issues you the cheapest thing in the armoury and wishes you
+  // well. Starting with nothing meant the first floor was decided before the
+  // player had learned a single system.
+  player.equipment.weapon = makeItem({ key: 'armingSword', ...ITEMS.armingSword }, x, y);
+  player.equipment.armour = makeItem({ key: 'gambeson', ...ITEMS.gambeson }, x, y);
+  return player;
 }
 
 export function makeMonster(spec, x, y) {

@@ -12,6 +12,12 @@ const STORAGE_KEY = 'ninth-crusade.memorial.v1';
 const MAX_ENTRIES = 60;
 const MAX_REVENANTS_PER_DEPTH = 3;
 
+// Nobody returns to the first two floors. Dying on depth 1 used to seed depth 1
+// with your own revenant, so each death made the opening harder than the last
+// and a new player could be locked out of their own game in three runs. The
+// crusaders who died in the mud outside the walls simply do not come back.
+const MIN_REVENANT_DEPTH = 3;
+
 export function memoryStorage() {
   const map = new Map();
   return {
@@ -75,6 +81,7 @@ export class Memorial {
    * does not eventually become a wall of your own corpses.
    */
   atDepth(depth) {
+    if (depth < MIN_REVENANT_DEPTH) return [];
     return this.entries
       .filter((e) => e.depth === depth)
       .slice(-MAX_REVENANTS_PER_DEPTH);

@@ -116,9 +116,11 @@ export class Game {
     // A budget for the whole floor, not dice per room: room count is whatever
     // mapgen happened to fit, and letting it set the population made shallow
     // floors unsurvivable.
+    // Depth 1 is where a player learns the verbs; it gets three. The curve
+    // catches up to the old numbers by the middle of the dungeon.
     const monsterCount = boss
       ? 2 + Math.floor(depth / 4)
-      : 3 + Math.round(depth * 0.8);
+      : 2 + Math.round(depth * 0.9);
     for (let i = 0; i < monsterCount; i++) {
       const spot = this.freeSpotInRoom(this.rng.pick(rooms));
       if (spot) this.level.add(makeMonster(this.rng.weighted(monsters), spot.x, spot.y));
@@ -258,6 +260,7 @@ export class Game {
     this.turn++;
     tickStatuses(this, this.player);
     tickRegeneration(this.player);
+    this.hintRegeneration();
     this.maybeWander();
     this.runMonsterTurns();
     this._distCache = null;
@@ -300,13 +303,29 @@ export class Game {
   }
 
   /**
+   * A new crusader has no way to know that standing still closes wounds, and
+   * will bleed out on the first floor never having tried it. Said once.
+   */
+  hintRegeneration() {
+    if (this.hintedRegen || !this.player.alive) return;
+    if (this.player.hp > this.player.maxHp * 0.6) return;
+    this.hintedRegen = true;
+    this.log('Wounds close if you give them time. [space] to wait.', 'mythic');
+  }
+
+  /**
    * Send something down the corridor, out of sight and far enough away that it
    * has to arrive rather than appear. Capped per floor so a slow crusader is
    * pressured, not buried.
    */
   maybeWander() {
     if (this.turn === 0 || this.turn % WANDER_EVERY !== 0) return;
-    if (this.wanderers >= 2 + Math.floor(this.level.depth / 3)) return;
+    // Nothing wanders onto the first floor. Wandering monsters exist to price
+    // resting, and a player who has not yet learned that resting is possible
+    // only experiences them as ambushes.
+    const depth = this.level.depth;
+    if (depth < 2) return;
+    if (this.wanderers >= 1 + Math.floor(depth / 3)) return;
 
     const table = monsterTable(this.region);
     for (let tries = 0; tries < 60; tries++) {

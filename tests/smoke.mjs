@@ -177,9 +177,10 @@ section('the dungeon remembers');
   const memorial = new Memorial(storage);
 
   const first = new Game({ seed: 500, memorial });
+  first.buildLevel(4);                       // deep enough that they come back
   const phialSpec = { key: 'reliquaryPhial', ...ITEMS.reliquaryPhial };
   first.player.inventory.push(makeItem(phialSpec, 0, 0));
-  first.finishRun('a camp dog');
+  first.finishRun('a bonepicker');
 
   check('death is recorded', memorial.entries.length === 1);
   check('the record keeps what they were carrying',
@@ -188,6 +189,7 @@ section('the dungeon remembers');
     new Memorial(storage).entries.length === 1);
 
   const second = new Game({ seed: 501, memorial });
+  second.buildLevel(4);
   const revenant = second.level.entities.find((e) => e.revenant);
   check('the dead crusader is waiting on the depth they died', Boolean(revenant));
   check('the revenant wears their name', revenant.name.includes(first.crusaderName));
@@ -200,13 +202,71 @@ section('the dungeon remembers');
 
   check('run number counts the crusade about to happen', memorial.runNumber() === 2);
 
-  // Depth 1 must not silt up with dozens of your own corpses.
+  // A floor must not silt up with dozens of your own corpses.
   for (let i = 0; i < 20; i++) {
-    memorial.record({ name: 'Pilgrim Test ' + i, depth: 1, relics: [], turn: 1, at: Date.now() });
+    memorial.record({ name: 'Pilgrim Test ' + i, depth: 4, relics: [], turn: 1, at: Date.now() });
   }
   const crowded = new Game({ seed: 502, memorial });
+  crowded.buildLevel(4);
   check('revenants per depth are capped',
     crowded.level.entities.filter((e) => e.revenant).length <= 3);
+
+  // The opening floors stay a clean slate however many crusaders have died
+  // there. Otherwise every death makes the start harder and a new player can
+  // be locked out of their own game in three runs.
+  const graveyard = new Memorial(memoryStorage());
+  for (let i = 0; i < 12; i++) {
+    graveyard.record({ name: 'Pilgrim Doomed ' + i, depth: 1, relics: [], turn: 1, at: Date.now() });
+    graveyard.record({ name: 'Pilgrim Doomed ' + i, depth: 2, relics: [], turn: 1, at: Date.now() });
+  }
+  check('twelve deaths on depth 1 add nothing to depth 1',
+    graveyard.atDepth(1).length === 0 && graveyard.atDepth(2).length === 0);
+  const early = new Game({ seed: 503, memorial: graveyard });
+  check('the opening floor is the same after a dozen deaths on it',
+    early.level.entities.filter((e) => e.revenant).length === 0);
+  check('but the memorial still records them all', graveyard.entries.length === 24);
+}
+
+// --- the opening floor -----------------------------------------------------
+// The first floor is where a player learns the verbs. It has to be survivable
+// while they are still learning them.
+section('the opening floor');
+{
+  const g = new Game({ seed: 4242, memorial: new Memorial() });
+  check('a crusader is issued a weapon and armour',
+    g.player.equipment.weapon !== null && g.player.equipment.armour !== null);
+  check('the issued kit is the cheapest thing in the armoury',
+    g.player.equipment.weapon.item.equip.power === ITEMS.armingSword.equip.power
+    && g.player.equipment.armour.item.equip.defense === ITEMS.gambeson.equip.defense);
+  check('the issued kit costs no speed', effectiveSpeed(g.player) === 100);
+
+  let worst = 0;
+  for (let seed = 0; seed < 60; seed++) {
+    const run = new Game({ seed, memorial: new Memorial() });
+    worst = Math.max(worst, run.level.entities.filter((e) => e.ai && e.alive).length);
+  }
+  check('depth 1 never fields more than four monsters (worst seen: ' + worst + ')', worst <= 4);
+
+  // Wanderers exist to price resting. A player who has not learned that
+  // resting is possible only experiences them as ambushes.
+  const w = invincible(new Game({ seed: 4243, memorial: new Memorial() }));
+  const before = w.level.entities.filter((e) => e.ai).length;
+  for (let i = 0; i < 500; i++) { if (w.state !== 'playing') break; w.playerActed(); }
+  check('nothing wanders onto depth 1',
+    w.wanderers === 0 && w.level.entities.filter((e) => e.ai).length === before);
+
+  // Regeneration is invisible; a new crusader will bleed out never having
+  // tried it. The game says so, once.
+  const h = new Game({ seed: 4244, memorial: new Memorial() });
+  h.player.hp = Math.floor(h.player.maxHp * 0.5);
+  h.playerActed();
+  check('the game explains resting the first time it matters',
+    h.messages.some((m) => m.text.includes('Wounds close')));
+  const saidTwice = h.messages.filter((m) => m.text.includes('Wounds close')).length;
+  h.player.hp = 1;
+  for (let i = 0; i < 5; i++) if (h.state === 'playing') h.playerActed();
+  check('and does not keep saying it',
+    h.messages.filter((m) => m.text.includes('Wounds close')).length === saidTwice);
 }
 
 // --- relics ----------------------------------------------------------------
@@ -277,6 +337,10 @@ section('key bindings');
 section('arms and armour');
 {
   const g = new Game({ seed: 4040, memorial: new Memorial() });
+  // Strip the issued kit: this section tests the slot mechanics, not the
+  // starting loadout (which 'the opening floor' covers).
+  for (const slot of SLOTS) g.player.equipment[slot] = null;
+
   const give = (key) => {
     g.player.inventory.push(makeItem({ key, ...ITEMS[key] }, 0, 0));
     return g.player.inventory.length - 1;
@@ -363,6 +427,7 @@ section('the dead keep their kit');
 {
   const memorial = new Memorial(memoryStorage());
   const first = new Game({ seed: 700, memorial });
+  first.buildLevel(5);                       // deep enough that they come back
   first.player.equipment.weapon = makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0);
   first.player.equipment.armour = makeItem({ key: 'mailHauberk', ...ITEMS.mailHauberk }, 0, 0);
   first.finishRun('a chorister');
@@ -372,14 +437,16 @@ section('the dead keep their kit');
     && memorial.entries[0].equipment.includes('mailHauberk'));
 
   const second = new Game({ seed: 701, memorial });
+  second.buildLevel(5);
   const revenant = second.level.entities.find((e) => e.revenant);
 
   // Compare against the same predecessor recorded with nothing equipped, so the
   // difference can only come from the kit.
   const barefootMemorial = new Memorial(memoryStorage());
   barefootMemorial.record({ ...memorial.entries[0], equipment: [], relics: [] });
-  const barefoot = new Game({ seed: 701, memorial: barefootMemorial })
-    .level.entities.find((e) => e.revenant);
+  const barefootGame = new Game({ seed: 701, memorial: barefootMemorial });
+  barefootGame.buildLevel(5);
+  const barefoot = barefootGame.level.entities.find((e) => e.revenant);
 
   check('the revenant hits harder for the weapon',
     revenant.power === barefoot.power + ITEMS.censerFlail.equip.power);
@@ -483,6 +550,7 @@ section('regeneration and wanderers');
 
   // Wanderers are what stop resting from being free.
   const w = invincible(new Game({ seed: 7071, memorial: new Memorial() }));
+  w.buildLevel(6);                           // nothing wanders onto depth 1
   const startingMonsters = w.level.entities.filter((e) => e.ai && e.alive).length;
   for (let i = 0; i < 400; i++) { if (w.state !== 'playing') break; w.playerActed(); }
   const now = w.level.entities.filter((e) => e.ai && e.alive).length;
@@ -593,8 +661,27 @@ section('random playthroughs');
   }
 
   check('25 runs x 500 turns: no crash, no deadlock, no invariant broken', invariantsHeld);
-  check('the dungeon is lethal (' + deaths + ' deaths)', deaths > 0);
-  check('deaths accumulated in the memorial', memorial.entries.length === deaths);
+  check('every death was written to the memorial', memorial.entries.length === deaths);
+
+  // Depth 1 is meant to be survivable, so a random walker living through it
+  // proves nothing. Lethality belongs where the dungeon is supposed to bite.
+  const victim = new Game({ seed: 606, memorial: new Memorial(memoryStorage()) });
+  victim.buildLevel(6);
+  for (let i = 0; i < 800 && victim.state === 'playing'; i++) victim.playerActed();
+  check('a crusader who never fights back dies in the Reliquary',
+    victim.state === 'dead');
+
+  // And the opening floor is survivable even played badly.
+  let survived = 0;
+  for (let seed = 0; seed < 40; seed++) {
+    const g = new Game({ seed: seed * 13 + 1, memorial: new Memorial(memoryStorage()) });
+    for (let step = 0; step < 300 && g.state === 'playing'; step++) {
+      if (moveOrAttack(g, g.player, ...g.rng.pick(DIRS))) g.playerActed();
+    }
+    if (g.state === 'playing') survived++;
+  }
+  check('most crusaders survive 300 turns of flailing on depth 1 (' + survived + '/40)',
+    survived >= 30);
 }
 
 console.log('');
