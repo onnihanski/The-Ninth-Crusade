@@ -33,6 +33,7 @@ export const THEME = {
     boss: '#e0b25c',
     corpse: '#5c4340',
     item: '#7fa8c9',
+    gear: '#b9a06a',
     seal: '#e0b25c',
 
     text: '#cfc7b8',

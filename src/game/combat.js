@@ -1,11 +1,12 @@
-import { effectiveDefense } from './status.js';
+import { effectiveDefense, effectivePower } from './status.js';
 
 // Deliberately simple: power vs defense with a small random spread. The first
 // thing worth deepening once the content settles -- to-hit rolls, damage types,
 // resistances all slot in here without touching anything else.
 export function attack(game, attacker, defender) {
   if (defender.isPlayer) game.lastAttacker = article(attacker);
-  const roll = game.rng.int(attacker.power - 1, attacker.power + 1);
+  const power = effectivePower(attacker);
+  const roll = game.rng.int(power - 1, power + 1);
   const dealt = Math.max(0, roll - effectiveDefense(defender));
   const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
   const object = defender.isPlayer ? 'you' : article(defender);

@@ -2,11 +2,14 @@
 // Catches what is painful to find by clicking around a browser -- scheduler
 // deadlocks, unreachable gates, AI walking into walls, memorial corruption.
 import { Game } from '../src/game/game.js';
-import { moveOrAttack, wait, pickUp, useItem, descend } from '../src/game/actions.js';
+import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, descend } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
 import { makeItem } from '../src/game/entity.js';
+import { attack } from '../src/game/combat.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { Tiles } from '../src/world/tiles.js';
+import { effectivePower, effectiveDefense, effectiveSpeed } from '../src/game/status.js';
+import { keyToIntent } from '../src/ui/input.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
 import { ITEMS } from '../src/data/items.js';
 
@@ -232,6 +235,152 @@ section('relics');
   g.player.inventory.push(makeItem({ key: 'brassSeal', ...ITEMS.brassSeal }, 0, 0));
   check('a seal cannot be used as a consumable',
     useItem(g, g.player, g.player.inventory.length - 1) === false);
+}
+
+// --- key bindings ----------------------------------------------------------
+section('key bindings');
+{
+  const press = (key, code) => keyToIntent({ key, code: code ?? 'Key' + key.toUpperCase() });
+  const moves = (key, dx, dy) => {
+    const i = press(key);
+    return i?.type === 'move' && i.dx === dx && i.dy === dy;
+  };
+  check('WASD moves in the four cardinals',
+    moves('w', 0, -1) && moves('a', -1, 0) && moves('s', 0, 1) && moves('d', 1, 0));
+  check('QEZC covers the diagonals monsters can use',
+    moves('q', -1, -1) && moves('e', 1, -1) && moves('z', -1, 1) && moves('c', 1, 1));
+  check('every one of the eight directions is bound', (() => {
+    const bound = new Set();
+    for (const key of ['w', 'a', 's', 'd', 'q', 'e', 'z', 'c']) {
+      const i = press(key);
+      bound.add(i.dx + ',' + i.dy);
+    }
+    return bound.size === 8;
+  })());
+  check('shift does not break movement', moves('W', 0, -1));
+  check('the digit row is inventory, not movement',
+    press('3', 'Digit3').type === 'use' && press('3', 'Digit3').index === 2);
+  check('the numpad is still movement',
+    press('3', 'Numpad3').type === 'move' && press('5', 'Numpad5').type === 'wait');
+  check('space waits', press(' ', 'Space').type === 'wait');
+  check('other verbs survive the rebind',
+    press('g').type === 'pickup' && press('r').type === 'restart'
+    && keyToIntent({ key: '>', code: 'Period' }).type === 'descend');
+}
+
+// --- equipment -------------------------------------------------------------
+section('arms and armour');
+{
+  const g = new Game({ seed: 4040, memorial: new Memorial() });
+  const give = (key) => {
+    g.player.inventory.push(makeItem({ key, ...ITEMS[key] }, 0, 0));
+    return g.player.inventory.length - 1;
+  };
+  const basePower = effectivePower(g.player);
+  const baseDefense = effectiveDefense(g.player);
+
+  check('bare hands use the base power', basePower === g.player.power);
+
+  equipItem(g, g.player, give('armingSword'));
+  check('a sword raises power', effectivePower(g.player) === basePower + 2);
+  check('the sword is worn, not carried',
+    g.player.equipment.weapon?.item.key === 'armingSword' && g.player.inventory.length === 0);
+
+  equipItem(g, g.player, give('kiteShield'));
+  equipItem(g, g.player, give('gambeson'));
+  check('shield and armour both raise defense',
+    effectiveDefense(g.player) === baseDefense + 2);
+  check('all three slots fill independently',
+    Boolean(g.player.equipment.weapon && g.player.equipment.shield && g.player.equipment.armour));
+
+  // Swapping must never eat the old piece.
+  equipItem(g, g.player, give('flangedMace'));
+  check('swapping a slot stows the displaced piece',
+    g.player.equipment.weapon.item.key === 'flangedMace'
+    && g.player.inventory.some((i) => i.item.key === 'armingSword'));
+  check('power follows the new weapon', effectivePower(g.player) === basePower + 3);
+
+  check('light gear costs no speed', effectiveSpeed(g.player) === 100);
+  equipItem(g, g.player, give('ossuaryPlate'));
+  check('heavy armour costs speed', effectiveSpeed(g.player) < 100);
+  check('heavy armour still pays in defense',
+    effectiveDefense(g.player) === baseDefense + 1 + 4);
+
+  // The scheduler divides by nothing, but it does spin forever on an actor
+  // that can never bank a turn's worth of energy.
+  g.player.speed = 10;
+  equipItem(g, g.player, give('martyrsGreatsword'));
+  check('speed is floored above zero however heavy the load', effectiveSpeed(g.player) >= 25);
+  g.player.speed = 100;
+
+  check('unequipping returns the piece to the pack',
+    unequip(g, g.player, 'armour') && g.player.inventory.some((i) => i.item.key === 'ossuaryPlate')
+    && g.player.equipment.armour === null);
+
+  // Equipping through the normal use path, as the 1-9 keys do.
+  const idx = give('heaterShield');
+  check('the use key equips gear rather than consuming it',
+    useItem(g, g.player, idx) && g.player.equipment.shield.item.key === 'heaterShield'
+    && g.player.inventory.some((i) => i.item.key === 'kiteShield'));
+}
+
+// --- gear in combat and on the dead ----------------------------------------
+section('gear in play');
+{
+  const g = new Game({ seed: 6161, memorial: new Memorial() });
+  const target = g.level.entities.find((e) => e.ai) ?? null;
+  if (target) {
+    target.hp = 999; target.maxHp = 999; target.defense = 0;
+    const hpBefore = target.hp;
+    g.rng = { int: (min) => min, float: () => 0.5, pick: (a) => a[0], chance: () => false };
+    attack(g, g.player, target);
+    const unarmed = hpBefore - target.hp;
+
+    g.player.equipment.weapon = makeItem({ key: 'martyrsGreatsword', ...ITEMS.martyrsGreatsword }, 0, 0);
+    const hpMid = target.hp;
+    attack(g, g.player, target);
+    check('a wielded weapon actually lands harder', (hpMid - target.hp) > unarmed);
+  } else {
+    check('a wielded weapon actually lands harder', false);
+  }
+}
+
+section('the dead keep their kit');
+{
+  const memorial = new Memorial(memoryStorage());
+  const first = new Game({ seed: 700, memorial });
+  first.player.equipment.weapon = makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0);
+  first.player.equipment.armour = makeItem({ key: 'mailHauberk', ...ITEMS.mailHauberk }, 0, 0);
+  first.finishRun('a chorister');
+
+  check('the memorial records what they were wearing',
+    memorial.entries[0].equipment.includes('censerFlail')
+    && memorial.entries[0].equipment.includes('mailHauberk'));
+
+  const second = new Game({ seed: 701, memorial });
+  const revenant = second.level.entities.find((e) => e.revenant);
+
+  // Compare against the same predecessor recorded with nothing equipped, so the
+  // difference can only come from the kit.
+  const barefootMemorial = new Memorial(memoryStorage());
+  barefootMemorial.record({ ...memorial.entries[0], equipment: [], relics: [] });
+  const barefoot = new Game({ seed: 701, memorial: barefootMemorial })
+    .level.entities.find((e) => e.revenant);
+
+  check('the revenant hits harder for the weapon',
+    revenant.power === barefoot.power + ITEMS.censerFlail.equip.power);
+  check('the revenant is tougher for the armour',
+    revenant.defense === barefoot.defense + ITEMS.mailHauberk.equip.defense);
+  check('the revenant is slowed by it, as you were',
+    revenant.speed === 100 + ITEMS.censerFlail.equip.speed + ITEMS.mailHauberk.equip.speed);
+  check('the revenant drops the whole kit',
+    revenant.drops.includes('censerFlail') && revenant.drops.includes('mailHauberk'));
+
+  invincible(second);
+  killEntity(second, revenant);
+  const onFloor = second.level.entities.filter((e) => e.item).map((e) => e.item.key);
+  check('your old gear is recoverable off your old body',
+    onFloor.includes('censerFlail') && onFloor.includes('mailHauberk'));
 }
 
 // --- long random playthroughs ----------------------------------------------

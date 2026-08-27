@@ -4,7 +4,7 @@ import { Level } from '../world/level.js';
 import { Tiles } from '../world/tiles.js';
 import { makePlayer, makeMonster, makeItem, makeRevenant } from './entity.js';
 import { takeAiTurn } from './ai.js';
-import { tickStatuses } from './status.js';
+import { tickStatuses, effectiveSpeed, equipped } from './status.js';
 import { Memorial } from './memorial.js';
 import { MONSTERS, monsterTable } from '../data/monsters.js';
 import { ITEMS, itemTable } from '../data/items.js';
@@ -222,6 +222,7 @@ export class Game {
       relics: this.player.inventory
         .filter((i) => i.item?.key && !i.item.victory)
         .map((i) => i.item.key),
+      equipment: equipped(this.player).map((i) => i.item.key),
       at: Date.now(),
     });
   }
@@ -262,7 +263,7 @@ export class Game {
   runMonsterTurns() {
     // Loop ticks until the player has banked enough energy to act again.
     while (this.player.alive && this.player.energy < ACT_COST) {
-      for (const actor of this.level.actors()) actor.energy += actor.speed;
+      for (const actor of this.level.actors()) actor.energy += effectiveSpeed(actor);
 
       // Snapshot: AI turns can kill entities and mutate the list.
       for (const actor of [...this.level.entities]) {

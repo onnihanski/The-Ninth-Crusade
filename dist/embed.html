@@ -55,7 +55,12 @@
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
   ul { list-style: none; margin: 0; padding: 0; }
-  #inventory li, #help li { padding: 2px 0; font-size: 11px; }
+  #inventory li, #help li, #worn li { padding: 2px 0; font-size: 11px; }
+  #worn li { display: flex; gap: 8px; }
+  #worn .slot { color: var(--dim); width: 52px; flex: none; }
+  #worn .empty { color: var(--dim); }
+  .stat { margin-right: 10px; color: var(--dim); font-size: 11px; }
+  .stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
   #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
   #inventory .empty { color: var(--dim); }
   kbd {
@@ -98,6 +103,11 @@
     <section>
       <h2>Seals</h2>
       <div id="seals"></div>
+    </section>
+
+    <section>
+      <h2>Kit</h2>
+      <ul id="worn"></ul>
     </section>
 
     <section>
@@ -484,11 +494,120 @@ class Level {
   }
 }
 
+// ==== src/data/items.js ====================
+// Relics are the game's magic: no spellbook, no mana, just consumable objects
+// with one clear verb each. `use` is a tagged effect resolved in game/effects.js.
+const ITEMS = {
+  reliquaryPhial: {
+    name: 'reliquary phial', glyph: '!', color: 'item',
+    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
+    flavour: 'Contents: mostly saint.',
+  },
+  sparkOfTheChoir: {
+    name: 'spark of the choir', glyph: '?', color: 'item',
+    weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
+    flavour: 'One held note, released.',
+  },
+  psalmOfWard: {
+    name: 'psalm of ward', glyph: '?', color: 'item',
+    weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
+    flavour: 'Sung badly, it still works.',
+  },
+  stepOfTheAbsent: {
+    name: 'step of the absent', glyph: '?', color: 'item',
+    weight: 6, minDepth: 4, use: { kind: 'blink' },
+    flavour: 'The floor forgets you were standing on it.',
+  },
+
+  // -- Arms and armour ------------------------------------------------------
+  //
+  // Every piece is a trade, never a straight upgrade: the heavy things cost
+  // speed, and speed is turns. `slot` is what it displaces when worn.
+  armingSword: {
+    name: 'arming sword', glyph: ')', color: 'gear',
+    weight: 9, minDepth: 1, equip: { slot: 'weapon', power: 2 },
+    flavour: 'Issued, not chosen.',
+  },
+  flangedMace: {
+    name: 'flanged mace', glyph: ')', color: 'gear',
+    weight: 7, minDepth: 3, equip: { slot: 'weapon', power: 3 },
+    flavour: 'Technically not a blade, so technically permitted.',
+  },
+  censerFlail: {
+    name: 'censer flail', glyph: ')', color: 'gear',
+    weight: 5, minDepth: 6, equip: { slot: 'weapon', power: 5, speed: -10 },
+    flavour: 'Swung wide, it still smells of the service.',
+  },
+  martyrsGreatsword: {
+    name: "martyr's greatsword", glyph: ')', color: 'gear',
+    weight: 4, minDepth: 8, equip: { slot: 'weapon', power: 7, speed: -25 },
+    flavour: 'Two hands, one conviction, no hurry.',
+  },
+
+  kiteShield: {
+    name: 'battered kite shield', glyph: '(', color: 'gear',
+    weight: 8, minDepth: 1, equip: { slot: 'shield', defense: 1 },
+    flavour: 'Someone else stopped something with this.',
+  },
+  heaterShield: {
+    name: 'heater shield', glyph: '(', color: 'gear',
+    weight: 6, minDepth: 4, equip: { slot: 'shield', defense: 2, speed: -5 },
+    flavour: 'Painted with a wall, badly.',
+  },
+  aegisOfAmbrose: {
+    name: 'aegis of Saint Ambrose', glyph: '(', color: 'gear',
+    weight: 3, minDepth: 7, equip: { slot: 'shield', defense: 3, speed: -10 },
+    flavour: 'It did not work for him either, but it took longer.',
+  },
+
+  gambeson: {
+    name: 'padded gambeson', glyph: '[', color: 'gear',
+    weight: 9, minDepth: 1, equip: { slot: 'armour', defense: 1 },
+    flavour: 'Warm. That is the whole of it.',
+  },
+  mailHauberk: {
+    name: 'mail hauberk', glyph: '[', color: 'gear',
+    weight: 7, minDepth: 3, equip: { slot: 'armour', defense: 2, speed: -10 },
+    flavour: 'Four thousand rings, all of them yours to carry.',
+  },
+  ossuaryPlate: {
+    name: 'ossuary plate', glyph: '[', color: 'gear',
+    weight: 4, minDepth: 7, equip: { slot: 'armour', defense: 4, speed: -25 },
+    flavour: 'Fitted to someone your size. He is not using it.',
+  },
+
+  // -- Seals: not usable, only carried. Their whole function is opening gates.
+  brassSeal: {
+    name: 'brass seal', glyph: '=', color: 'seal', seal: 'siegeYards',
+    flavour: 'Stamped with a wall that no longer exists.',
+  },
+  silverSeal: {
+    name: 'silver seal', glyph: '=', color: 'seal', seal: 'reliquary',
+    flavour: 'Warm, which is not a thing silver does.',
+  },
+  goldSeal: {
+    name: 'gold seal', glyph: '=', color: 'seal', seal: 'choir',
+    flavour: 'It hums the note you have been trying to forget.',
+  },
+  theRelic: {
+    name: 'the Relic', glyph: '*', color: 'notable', victory: true,
+    flavour: 'You came a long way for this.',
+  },
+};
+
+/** Only floor-spawnable relics -- seals are placed by bosses, never rolled. */
+function itemTable(depth) {
+  return Object.entries(ITEMS)
+    .filter(([, item]) => item.weight && depth >= item.minDepth)
+    .map(([key, item]) => ({ key, ...item }));
+}
+
 // ==== src/game/entity.js ===================
 // Entities are plain bags of optional fields rather than a class hierarchy.
 // A thing is a monster because it has `ai`, an item because it has `item`, a
 // combatant because it has `maxHp`. Adding a new kind of thing means adding a
 // field, never editing a base class.
+
 let nextId = 1;
 
 function makeEntity(props = {}) {
@@ -514,6 +633,7 @@ function makePlayer(x, y, name) {
     blocks: true, speed: 100,
     maxHp: 22, hp: 22, power: 5, defense: 1,
     inventory: [],
+    equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
 }
@@ -537,15 +657,22 @@ function makeMonster(spec, x, y) {
  */
 function makeRevenant(entry, x, y) {
   const depth = entry.depth;
+  // They are still wearing it, so it still counts -- and it is still on them
+  // when they go down again.
+  const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
+  const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
+  const hp = 14 + depth * 3;
+
   return makeEntity({
     x, y,
     glyph: '@', color: 'revenant',
     name: 'the revenant of ' + entry.name,
-    blocks: true, speed: 100,
-    maxHp: 14 + depth * 3, hp: 14 + depth * 3,
-    power: 4 + Math.floor(depth / 2),
-    defense: 1 + Math.floor(depth / 4),
-    drops: [...(entry.relics ?? [])],
+    blocks: true,
+    speed: Math.max(40, 100 + bonus('speed')),
+    maxHp: hp, hp,
+    power: 4 + Math.floor(depth / 2) + bonus('power'),
+    defense: 1 + Math.floor(depth / 4) + bonus('defense'),
+    drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
     revenant: true,
     ai: { hunting: false },
   });
@@ -555,15 +682,21 @@ function makeItem(spec, x, y) {
   return makeEntity({
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
-    item: { key: spec.key, use: spec.use, seal: spec.seal, victory: spec.victory, flavour: spec.flavour },
+    item: {
+      key: spec.key, use: spec.use, equip: spec.equip,
+      seal: spec.seal, victory: spec.victory, flavour: spec.flavour,
+    },
   });
 }
 
 // ==== src/game/status.js ===================
-// Timed statuses. Deliberately tiny: a list of {kind, turns, amount} that ticks
-// down once per turn of the actor carrying it. Everything that reads a stat
-// goes through the accessors here rather than reading `.defense` directly, so
-// new statuses never require hunting down call sites.
+// Derived stats and timed statuses.
+//
+// Nothing reads `.power`, `.defense` or `.speed` off an entity directly --
+// every call site goes through the accessors here. That is what lets equipment
+// and statuses both modify a stat without either knowing the other exists.
+const MIN_SPEED = 25;
+
 function addStatus(game, entity, status) {
   entity.statuses ??= [];
   const existing = entity.statuses.find((s) => s.kind === status.kind);
@@ -594,8 +727,30 @@ function statusAmount(entity, kind) {
   return entity.statuses?.find((s) => s.kind === kind)?.amount ?? 0;
 }
 
+/** Everything currently worn or held, in no particular order. */
+function equipped(entity) {
+  return Object.values(entity.equipment ?? {}).filter(Boolean);
+}
+
+function gearBonus(entity, field) {
+  return equipped(entity).reduce((sum, item) => sum + (item.item.equip[field] ?? 0), 0);
+}
+
+function effectivePower(entity) {
+  return entity.power + gearBonus(entity, 'power');
+}
+
 function effectiveDefense(entity) {
-  return entity.defense + statusAmount(entity, 'ward');
+  return entity.defense + gearBonus(entity, 'defense') + statusAmount(entity, 'ward');
+}
+
+/**
+ * Heavy gear costs turns, which is the whole trade. Floored well above zero:
+ * an actor that never banks energy would spin the scheduler forever waiting
+ * for a turn that cannot arrive.
+ */
+function effectiveSpeed(entity) {
+  return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
 }
 
 // ==== src/game/combat.js ===================
@@ -604,7 +759,8 @@ function effectiveDefense(entity) {
 // resistances all slot in here without touching anything else.
 function attack(game, attacker, defender) {
   if (defender.isPlayer) game.lastAttacker = article(attacker);
-  const roll = game.rng.int(attacker.power - 1, attacker.power + 1);
+  const power = effectivePower(attacker);
+  const roll = game.rng.int(power - 1, power + 1);
   const dealt = Math.max(0, roll - effectiveDefense(defender));
   const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
   const object = defender.isPlayer ? 'you' : article(defender);
@@ -821,7 +977,7 @@ const MONSTERS = {
   herald: {
     name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
     boss: true, maxHp: 32, power: 6, defense: 2, speed: 110,
-    drops: ['brassSeal'],
+    drops: ['brassSeal', 'heaterShield'],
     entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
   },
 
@@ -841,7 +997,7 @@ const MONSTERS = {
   saintAmbrose: {
     name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
     boss: true, maxHp: 48, power: 8, defense: 3, speed: 100,
-    drops: ['silverSeal', 'reliquaryPhial'],
+    drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
     entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
   },
 
@@ -861,7 +1017,7 @@ const MONSTERS = {
   theVoice: {
     name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
     boss: true, maxHp: 62, power: 10, defense: 4, speed: 120,
-    drops: ['goldSeal', 'psalmOfWard'],
+    drops: ['goldSeal', 'censerFlail', 'psalmOfWard'],
     entrance: 'The singing stops. This is much worse.',
   },
 
@@ -889,57 +1045,6 @@ const MONSTERS = {
 /** Weighted spawn table for a region's rank-and-file. */
 function monsterTable(region) {
   return region.monsters.map((key) => ({ key, ...MONSTERS[key] }));
-}
-
-// ==== src/data/items.js ====================
-// Relics are the game's magic: no spellbook, no mana, just consumable objects
-// with one clear verb each. `use` is a tagged effect resolved in game/effects.js.
-const ITEMS = {
-  reliquaryPhial: {
-    name: 'reliquary phial', glyph: '!', color: 'item',
-    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
-    flavour: 'Contents: mostly saint.',
-  },
-  sparkOfTheChoir: {
-    name: 'spark of the choir', glyph: '?', color: 'item',
-    weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
-    flavour: 'One held note, released.',
-  },
-  psalmOfWard: {
-    name: 'psalm of ward', glyph: '?', color: 'item',
-    weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
-    flavour: 'Sung badly, it still works.',
-  },
-  stepOfTheAbsent: {
-    name: 'step of the absent', glyph: '?', color: 'item',
-    weight: 6, minDepth: 4, use: { kind: 'blink' },
-    flavour: 'The floor forgets you were standing on it.',
-  },
-
-  // -- Seals: not usable, only carried. Their whole function is opening gates.
-  brassSeal: {
-    name: 'brass seal', glyph: '=', color: 'seal', seal: 'siegeYards',
-    flavour: 'Stamped with a wall that no longer exists.',
-  },
-  silverSeal: {
-    name: 'silver seal', glyph: '=', color: 'seal', seal: 'reliquary',
-    flavour: 'Warm, which is not a thing silver does.',
-  },
-  goldSeal: {
-    name: 'gold seal', glyph: '=', color: 'seal', seal: 'choir',
-    flavour: 'It hums the note you have been trying to forget.',
-  },
-  theRelic: {
-    name: 'the Relic', glyph: '*', color: 'notable', victory: true,
-    flavour: 'You came a long way for this.',
-  },
-};
-
-/** Only floor-spawnable relics -- seals are placed by bosses, never rolled. */
-function itemTable(depth) {
-  return Object.entries(ITEMS)
-    .filter(([, item]) => item.weight && depth >= item.minDepth)
-    .map(([key, item]) => ({ key, ...item }));
 }
 
 // ==== src/data/regions.js ==================
@@ -1071,6 +1176,7 @@ const THEME = {
     boss: '#e0b25c',
     corpse: '#5c4340',
     item: '#7fa8c9',
+    gear: '#b9a06a',
     seal: '#e0b25c',
 
     text: '#cfc7b8',
@@ -1302,6 +1408,7 @@ class Game {
       relics: this.player.inventory
         .filter((i) => i.item?.key && !i.item.victory)
         .map((i) => i.item.key),
+      equipment: equipped(this.player).map((i) => i.item.key),
       at: Date.now(),
     });
   }
@@ -1342,7 +1449,7 @@ class Game {
   runMonsterTurns() {
     // Loop ticks until the player has banked enough energy to act again.
     while (this.player.alive && this.player.energy < ACT_COST) {
-      for (const actor of this.level.actors()) actor.energy += actor.speed;
+      for (const actor of this.level.actors()) actor.energy += effectiveSpeed(actor);
 
       // Snapshot: AI turns can kill entities and mutate the list.
       for (const actor of [...this.level.entities]) {
@@ -1522,12 +1629,19 @@ function pickUp(game, actor) {
   return true;
 }
 
+const EQUIP_VERB = {
+  weapon: 'You take up',
+  shield: 'You strap on',
+  armour: 'You put on',
+};
+
 function useItem(game, actor, index) {
   const item = actor.inventory[index];
   if (!item) {
     game.log('Nothing in that slot.', 'textDim');
     return false;
   }
+  if (item.item.equip) return equipItem(game, actor, index);
   if (!item.item.use) {
     game.log('The ' + item.name + ' is for carrying, not for using.', 'textDim');
     return false;
@@ -1536,6 +1650,47 @@ function useItem(game, actor, index) {
   const spent = applyEffect(game, actor, item.item.use);
   if (spent) actor.inventory.splice(index, 1);
   return spent;
+}
+
+/**
+ * Wear or wield the item in that slot, stowing whatever it displaces. Gear is
+ * never destroyed by swapping -- the old piece goes straight back in the pack.
+ */
+function equipItem(game, actor, index) {
+  const item = actor.inventory[index];
+  const slot = item.item.equip.slot;
+  const displaced = actor.equipment[slot];
+  const speedBefore = effectiveSpeed(actor);
+
+  actor.inventory.splice(index, 1);
+  actor.equipment[slot] = item;
+  if (displaced) actor.inventory.push(displaced);
+
+  game.log(
+    EQUIP_VERB[slot] + ' the ' + item.name
+      + (displaced ? ', and stow the ' + displaced.name + '.' : '.'),
+    'notable',
+  );
+
+  // Weight is the trade, so say so plainly rather than hiding it in a stat.
+  const delta = effectiveSpeed(actor) - speedBefore;
+  if (delta < 0) game.log('You are slower under it.', 'textDim');
+  else if (delta > 0) game.log('You move more freely without the weight.', 'textDim');
+
+  return true;
+}
+
+function unequip(game, actor, slot) {
+  const item = actor.equipment[slot];
+  if (!item) return false;
+  if (actor.inventory.length >= 9) {
+    game.log('No room in the pack for it.', 'textDim');
+    return false;
+  }
+  actor.equipment[slot] = null;
+  actor.inventory.push(item);
+  game.log('You set aside the ' + item.name + '.', 'textDim');
+  return true;
 }
 
 function descend(game) {
@@ -1643,39 +1798,50 @@ function parseHex(hex) {
 }
 
 // ==== src/ui/input.js ======================
-// Key bindings -> intents. Arrows, vi keys (hjkl + yubn for diagonals) and the
-// numpad all work, because roguelike players have strong opinions about this.
+// Key bindings -> intents.
+//
+// WASD for the cardinals, QEZC for the diagonals. The diagonals are not
+// optional garnish: monsters move and attack on all eight directions, so a
+// player limited to four would be flanked with no way to answer. The numpad
+// and arrow keys stay bound for people who reach for them.
 const MOVES = {
+  w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
+  q: [-1, -1], e: [1, -1], z: [-1, 1], c: [1, 1],
   ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
-  k: [0, -1], j: [0, 1], h: [-1, 0], l: [1, 0],
-  y: [-1, -1], u: [1, -1], b: [-1, 1], n: [1, 1],
-  '8': [0, -1], '2': [0, 1], '4': [-1, 0], '6': [1, 0],
-  '7': [-1, -1], '9': [1, -1], '1': [-1, 1], '3': [1, 1],
+};
+
+// Numpad only -- the digit row is inventory slots.
+const NUMPAD_MOVES = {
+  8: [0, -1], 2: [0, 1], 4: [-1, 0], 6: [1, 0],
+  7: [-1, -1], 9: [1, -1], 1: [-1, 1], 3: [1, 1],
 };
 
 function keyToIntent(event) {
-  const key = event.key;
-
-  // Digits double as inventory slots, so only treat them as movement when the
-  // numpad sent them.
+  const raw = event.key;
+  const key = raw.length === 1 ? raw.toLowerCase() : raw;
   const fromNumpad = event.code.startsWith('Numpad');
-  if (MOVES[key] && (!/^[1-9]$/.test(key) || fromNumpad)) {
-    return { type: 'move', dx: MOVES[key][0], dy: MOVES[key][1] };
+
+  if (fromNumpad) {
+    if (NUMPAD_MOVES[key]) return { type: 'move', dx: NUMPAD_MOVES[key][0], dy: NUMPAD_MOVES[key][1] };
+    if (key === '5') return { type: 'wait' };
   }
 
-  if (/^[1-9]$/.test(key) && !fromNumpad) return { type: 'use', index: Number(key) - 1 };
-  if (key === '.' || key === '5' || key === 's') return { type: 'wait' };
+  if (MOVES[key]) return { type: 'move', dx: MOVES[key][0], dy: MOVES[key][1] };
+
+  if (/^[1-9]$/.test(key)) return { type: 'use', index: Number(key) - 1 };
+  if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
-  if (key === '>') return { type: 'descend' };
+  if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
 }
 
 const HELP = [
-  ['move', 'arrows / hjkl+yubn / numpad'],
-  ['wait', '. or 5'],
-  ['pick up', 'g'],
-  ['use item', '1-9'],
+  ['move', 'W A S D'],
+  ['diagonals', 'Q E Z C'],
+  ['wait', 'space'],
+  ['take', 'g'],
+  ['use / wear', '1-9'],
   ['descend', '>'],
   ['restart', 'r'],
 ];
@@ -1688,7 +1854,7 @@ class Panel {
     this.theme = theme;
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
-      'inventory', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
+      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
       this.el[id] = root.querySelector('#' + id);
     }
 
@@ -1714,7 +1880,12 @@ class Panel {
     this.el['hp-fill'].style.background =
       ratio > 0.5 ? colors.good : ratio > 0.25 ? colors.notable : colors.bad;
     this.el['hp-text'].textContent = Math.max(0, p.hp) + ' / ' + p.maxHp;
-    this.el.stats.textContent = 'power ' + p.power + '   defense ' + p.defense;
+    // Show the numbers gear actually produces, not the naked ones.
+    const speed = effectiveSpeed(p);
+    this.el.stats.innerHTML =
+      stat('power', effectivePower(p), p.power, colors)
+      + stat('defense', effectiveDefense(p), p.defense, colors)
+      + stat('speed', speed, 100, colors);
 
     this.el.statuses.innerHTML = (p.statuses ?? [])
       .map((s) => '<span class="tag" style="color:' + colors.good + '">'
@@ -1726,6 +1897,15 @@ class Panel {
       ? p.inventory.map((item, i) => item.item?.seal ? '' :
         '<li><kbd>' + (i + 1) + '</kbd> ' + escapeHtml(item.name) + '</li>').join('')
       : '<li class="empty">(empty)</li>';
+
+    const SLOTS = [['weapon', 'held'], ['shield', 'shield'], ['armour', 'worn']];
+    this.el.worn.innerHTML = SLOTS.map(([slot, label]) => {
+      const item = p.equipment?.[slot];
+      const value = item
+        ? '<span style="color:' + colors.gear + '">' + escapeHtml(item.name) + '</span>'
+        : '<span class="empty">—</span>';
+      return '<li><span class="slot">' + label + '</span>' + value + '</li>';
+    }).join('');
 
     const seals = game.seals();
     this.el.seals.innerHTML = seals.length
@@ -1745,6 +1925,13 @@ class Panel {
 
     this.el.seed.textContent = 'seed ' + game.seed + '  ·  crusade #' + game.memorial.runNumber();
   }
+}
+
+/** A stat, with its modified value called out when gear has changed it. */
+function stat(label, value, base, colors) {
+  const color = value === base ? colors.textDim : value > base ? colors.good : colors.bad;
+  return '<span class="stat">' + label
+    + ' <b style="color:' + color + '">' + value + '</b></span>';
 }
 
 function escapeHtml(s) {
@@ -1777,7 +1964,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
 
 newGame();
 
@@ -1811,7 +1998,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
 
 newGame();
 </script>

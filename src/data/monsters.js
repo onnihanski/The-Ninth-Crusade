@@ -20,7 +20,7 @@ export const MONSTERS = {
   herald: {
     name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
     boss: true, maxHp: 32, power: 6, defense: 2, speed: 110,
-    drops: ['brassSeal'],
+    drops: ['brassSeal', 'heaterShield'],
     entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
   },
 
@@ -40,7 +40,7 @@ export const MONSTERS = {
   saintAmbrose: {
     name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
     boss: true, maxHp: 48, power: 8, defense: 3, speed: 100,
-    drops: ['silverSeal', 'reliquaryPhial'],
+    drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
     entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
   },
 
@@ -60,7 +60,7 @@ export const MONSTERS = {
   theVoice: {
     name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
     boss: true, maxHp: 62, power: 10, defense: 4, speed: 120,
-    drops: ['goldSeal', 'psalmOfWard'],
+    drops: ['goldSeal', 'censerFlail', 'psalmOfWard'],
     entrance: 'The singing stops. This is much worse.',
   },
 

@@ -34,14 +34,18 @@ node tests/smoke.mjs
 
 ## Playing
 
-| Action     | Keys                              |
-|------------|-----------------------------------|
-| Move       | arrows, `hjkl` + `yubn`, numpad   |
-| Wait       | `.` or `5`                        |
-| Pick up    | `g`                               |
-| Use relic  | `1`–`9`                           |
-| Descend    | `>` while standing on `>`         |
-| Restart    | `r`                               |
+| Action      | Keys                          |
+|-------------|-------------------------------|
+| Move        | `W` `A` `S` `D` (or arrows)     |
+| Diagonals   | `Q` `E` `Z` `C` (or numpad)     |
+| Wait        | space or `.`                  |
+| Take        | `g`                           |
+| Use / wear  | `1`–`9`                       |
+| Descend     | `>` while standing on `>`     |
+| Restart     | `r`                           |
+
+Diagonals are not optional garnish. Monsters move and attack on all eight
+directions, so a player limited to four would be flanked with no way to answer.
 
 Walk into something to attack it. Find the way down. On a boss floor the way
 down is a `=`, and it does not open for anything except the seal the boss is
@@ -51,6 +55,31 @@ Seals are kept, not spent. Relics are spent: a **reliquary phial** heals, a
 **spark of the choir** smites the nearest thing you can see, a **psalm of ward**
 makes you harder to reach for a while, and a **step of the absent** puts you
 somewhere else entirely.
+
+## Arms and armour
+
+Three slots — one weapon, one shield, one body. Press the pack slot to wear or
+wield what is in it; whatever it displaces goes straight back in the pack, so
+swapping never destroys a piece.
+
+Nothing is a straight upgrade. The heavy things cost **speed**, and speed is
+turns: a crusader in ossuary plate swinging a martyr's greatsword hits for
+almost double, and gives every monster on the floor two turns for each of
+theirs. The panel shows the numbers your gear actually produces, in green when
+the trade favours you and red when it does not.
+
+| Slot   | Light            | Middling        | Heavy                     |
+|--------|------------------|-----------------|---------------------------|
+| Weapon | arming sword +2  | flanged mace +3 | martyr's greatsword +7, −25 speed |
+| Shield | kite shield +1   | heater shield +2, −5 speed | aegis of Saint Ambrose +3, −10 speed |
+| Body   | gambeson +1      | mail hauberk +2, −10 speed | ossuary plate +4, −25 speed |
+
+The best pieces are carried by bosses, which is the other reason to fight them.
+
+And gear closes the loop with the memorial: **you die wearing it, so your
+revenant is wearing it.** A predecessor who fell in plate with a censer flail
+is a genuinely dangerous thing to meet — and killing them is how you get it all
+back.
 
 ## The dungeon
 
@@ -84,7 +113,7 @@ src/
     combat.js      damage resolution, death, drops
     ai.js          monster behaviour
     effects.js     relic effects
-    status.js      timed statuses (wards)
+    status.js      derived stats -- gear + statuses -> power, defense, speed
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
   ui/        browser layer
     render.js      canvas glyph renderer
@@ -94,10 +123,10 @@ src/
     theme.js       palette, flavour strings, tone
     regions.js     the four regions and their bosses
     monsters.js    monster roster
-    items.js       relics and seals
+    items.js       relics, arms, armour and seals
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
-tests/smoke.mjs    42 assertions, including a full run to depth 12
+tests/smoke.mjs    69 assertions, including a full run to depth 12
 ```
 
 ### Tone
@@ -122,7 +151,7 @@ flavour text define what the game *is*, with no changes needed anywhere in
   the Choir; `mapgen.js` is one generator where it should eventually be several
 - **Deeper memorial** — graves you can pray at, predecessors who remember how
   you died, a revenant that fights the way you played
-- **Progression** — XP, equipment, and a reason to take the long way round
+- **Progression** — XP, and a reason to take the long way round
 - **Bosses with mechanics** — right now they are large monsters; they should
   each break one rule of the game
 

@@ -1,4 +1,5 @@
 import { HELP } from './input.js';
+import { effectivePower, effectiveDefense, effectiveSpeed } from '../game/status.js';
 
 // The HTML side of the UI: who you are, where you are, what you are carrying,
 // and what the dungeon has been saying.
@@ -7,7 +8,7 @@ export class Panel {
     this.theme = theme;
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
-      'inventory', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
+      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
       this.el[id] = root.querySelector('#' + id);
     }
 
@@ -33,7 +34,12 @@ export class Panel {
     this.el['hp-fill'].style.background =
       ratio > 0.5 ? colors.good : ratio > 0.25 ? colors.notable : colors.bad;
     this.el['hp-text'].textContent = Math.max(0, p.hp) + ' / ' + p.maxHp;
-    this.el.stats.textContent = 'power ' + p.power + '   defense ' + p.defense;
+    // Show the numbers gear actually produces, not the naked ones.
+    const speed = effectiveSpeed(p);
+    this.el.stats.innerHTML =
+      stat('power', effectivePower(p), p.power, colors)
+      + stat('defense', effectiveDefense(p), p.defense, colors)
+      + stat('speed', speed, 100, colors);
 
     this.el.statuses.innerHTML = (p.statuses ?? [])
       .map((s) => '<span class="tag" style="color:' + colors.good + '">'
@@ -45,6 +51,15 @@ export class Panel {
       ? p.inventory.map((item, i) => item.item?.seal ? '' :
         '<li><kbd>' + (i + 1) + '</kbd> ' + escapeHtml(item.name) + '</li>').join('')
       : '<li class="empty">(empty)</li>';
+
+    const SLOTS = [['weapon', 'held'], ['shield', 'shield'], ['armour', 'worn']];
+    this.el.worn.innerHTML = SLOTS.map(([slot, label]) => {
+      const item = p.equipment?.[slot];
+      const value = item
+        ? '<span style="color:' + colors.gear + '">' + escapeHtml(item.name) + '</span>'
+        : '<span class="empty">—</span>';
+      return '<li><span class="slot">' + label + '</span>' + value + '</li>';
+    }).join('');
 
     const seals = game.seals();
     this.el.seals.innerHTML = seals.length
@@ -64,6 +79,13 @@ export class Panel {
 
     this.el.seed.textContent = 'seed ' + game.seed + '  ·  crusade #' + game.memorial.runNumber();
   }
+}
+
+/** A stat, with its modified value called out when gear has changed it. */
+function stat(label, value, base, colors) {
+  const color = value === base ? colors.textDim : value > base ? colors.good : colors.bad;
+  return '<span class="stat">' + label
+    + ' <b style="color:' + color + '">' + value + '</b></span>';
 }
 
 function escapeHtml(s) {

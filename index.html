@@ -61,7 +61,12 @@
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
   ul { list-style: none; margin: 0; padding: 0; }
-  #inventory li, #help li { padding: 2px 0; font-size: 11px; }
+  #inventory li, #help li, #worn li { padding: 2px 0; font-size: 11px; }
+  #worn li { display: flex; gap: 8px; }
+  #worn .slot { color: var(--dim); width: 52px; flex: none; }
+  #worn .empty { color: var(--dim); }
+  .stat { margin-right: 10px; color: var(--dim); font-size: 11px; }
+  .stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
   #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
   #inventory .empty { color: var(--dim); }
   kbd {
@@ -106,6 +111,11 @@
     <section>
       <h2>Seals</h2>
       <div id="seals"></div>
+    </section>
+
+    <section>
+      <h2>Kit</h2>
+      <ul id="worn"></ul>
     </section>
 
     <section>

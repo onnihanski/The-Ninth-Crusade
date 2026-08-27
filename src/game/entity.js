@@ -2,6 +2,8 @@
 // A thing is a monster because it has `ai`, an item because it has `item`, a
 // combatant because it has `maxHp`. Adding a new kind of thing means adding a
 // field, never editing a base class.
+import { ITEMS } from '../data/items.js';
+
 let nextId = 1;
 
 export function makeEntity(props = {}) {
@@ -27,6 +29,7 @@ export function makePlayer(x, y, name) {
     blocks: true, speed: 100,
     maxHp: 22, hp: 22, power: 5, defense: 1,
     inventory: [],
+    equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
 }
@@ -50,15 +53,22 @@ export function makeMonster(spec, x, y) {
  */
 export function makeRevenant(entry, x, y) {
   const depth = entry.depth;
+  // They are still wearing it, so it still counts -- and it is still on them
+  // when they go down again.
+  const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
+  const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
+  const hp = 14 + depth * 3;
+
   return makeEntity({
     x, y,
     glyph: '@', color: 'revenant',
     name: 'the revenant of ' + entry.name,
-    blocks: true, speed: 100,
-    maxHp: 14 + depth * 3, hp: 14 + depth * 3,
-    power: 4 + Math.floor(depth / 2),
-    defense: 1 + Math.floor(depth / 4),
-    drops: [...(entry.relics ?? [])],
+    blocks: true,
+    speed: Math.max(40, 100 + bonus('speed')),
+    maxHp: hp, hp,
+    power: 4 + Math.floor(depth / 2) + bonus('power'),
+    defense: 1 + Math.floor(depth / 4) + bonus('defense'),
+    drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
     revenant: true,
     ai: { hunting: false },
   });
@@ -68,6 +78,9 @@ export function makeItem(spec, x, y) {
   return makeEntity({
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
-    item: { key: spec.key, use: spec.use, seal: spec.seal, victory: spec.victory, flavour: spec.flavour },
+    item: {
+      key: spec.key, use: spec.use, equip: spec.equip,
+      seal: spec.seal, victory: spec.victory, flavour: spec.flavour,
+    },
   });
 }

@@ -1,7 +1,10 @@
-// Timed statuses. Deliberately tiny: a list of {kind, turns, amount} that ticks
-// down once per turn of the actor carrying it. Everything that reads a stat
-// goes through the accessors here rather than reading `.defense` directly, so
-// new statuses never require hunting down call sites.
+// Derived stats and timed statuses.
+//
+// Nothing reads `.power`, `.defense` or `.speed` off an entity directly --
+// every call site goes through the accessors here. That is what lets equipment
+// and statuses both modify a stat without either knowing the other exists.
+const MIN_SPEED = 25;
+
 export function addStatus(game, entity, status) {
   entity.statuses ??= [];
   const existing = entity.statuses.find((s) => s.kind === status.kind);
@@ -32,6 +35,28 @@ export function statusAmount(entity, kind) {
   return entity.statuses?.find((s) => s.kind === kind)?.amount ?? 0;
 }
 
+/** Everything currently worn or held, in no particular order. */
+export function equipped(entity) {
+  return Object.values(entity.equipment ?? {}).filter(Boolean);
+}
+
+function gearBonus(entity, field) {
+  return equipped(entity).reduce((sum, item) => sum + (item.item.equip[field] ?? 0), 0);
+}
+
+export function effectivePower(entity) {
+  return entity.power + gearBonus(entity, 'power');
+}
+
 export function effectiveDefense(entity) {
-  return entity.defense + statusAmount(entity, 'ward');
+  return entity.defense + gearBonus(entity, 'defense') + statusAmount(entity, 'ward');
+}
+
+/**
+ * Heavy gear costs turns, which is the whole trade. Floored well above zero:
+ * an actor that never banks energy would spin the scheduler forever waiting
+ * for a turn that cannot arrive.
+ */
+export function effectiveSpeed(entity) {
+  return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
 }

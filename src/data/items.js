@@ -22,6 +22,63 @@ export const ITEMS = {
     flavour: 'The floor forgets you were standing on it.',
   },
 
+  // -- Arms and armour ------------------------------------------------------
+  //
+  // Every piece is a trade, never a straight upgrade: the heavy things cost
+  // speed, and speed is turns. `slot` is what it displaces when worn.
+  armingSword: {
+    name: 'arming sword', glyph: ')', color: 'gear',
+    weight: 9, minDepth: 1, equip: { slot: 'weapon', power: 2 },
+    flavour: 'Issued, not chosen.',
+  },
+  flangedMace: {
+    name: 'flanged mace', glyph: ')', color: 'gear',
+    weight: 7, minDepth: 3, equip: { slot: 'weapon', power: 3 },
+    flavour: 'Technically not a blade, so technically permitted.',
+  },
+  censerFlail: {
+    name: 'censer flail', glyph: ')', color: 'gear',
+    weight: 5, minDepth: 6, equip: { slot: 'weapon', power: 5, speed: -10 },
+    flavour: 'Swung wide, it still smells of the service.',
+  },
+  martyrsGreatsword: {
+    name: "martyr's greatsword", glyph: ')', color: 'gear',
+    weight: 4, minDepth: 8, equip: { slot: 'weapon', power: 7, speed: -25 },
+    flavour: 'Two hands, one conviction, no hurry.',
+  },
+
+  kiteShield: {
+    name: 'battered kite shield', glyph: '(', color: 'gear',
+    weight: 8, minDepth: 1, equip: { slot: 'shield', defense: 1 },
+    flavour: 'Someone else stopped something with this.',
+  },
+  heaterShield: {
+    name: 'heater shield', glyph: '(', color: 'gear',
+    weight: 6, minDepth: 4, equip: { slot: 'shield', defense: 2, speed: -5 },
+    flavour: 'Painted with a wall, badly.',
+  },
+  aegisOfAmbrose: {
+    name: 'aegis of Saint Ambrose', glyph: '(', color: 'gear',
+    weight: 3, minDepth: 7, equip: { slot: 'shield', defense: 3, speed: -10 },
+    flavour: 'It did not work for him either, but it took longer.',
+  },
+
+  gambeson: {
+    name: 'padded gambeson', glyph: '[', color: 'gear',
+    weight: 9, minDepth: 1, equip: { slot: 'armour', defense: 1 },
+    flavour: 'Warm. That is the whole of it.',
+  },
+  mailHauberk: {
+    name: 'mail hauberk', glyph: '[', color: 'gear',
+    weight: 7, minDepth: 3, equip: { slot: 'armour', defense: 2, speed: -10 },
+    flavour: 'Four thousand rings, all of them yours to carry.',
+  },
+  ossuaryPlate: {
+    name: 'ossuary plate', glyph: '[', color: 'gear',
+    weight: 4, minDepth: 7, equip: { slot: 'armour', defense: 4, speed: -25 },
+    flavour: 'Fitted to someone your size. He is not using it.',
+  },
+
   // -- Seals: not usable, only carried. Their whole function is opening gates.
   brassSeal: {
     name: 'brass seal', glyph: '=', color: 'seal', seal: 'siegeYards',

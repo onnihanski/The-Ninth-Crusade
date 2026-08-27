@@ -1,4 +1,6 @@
 import { Game } from './game/game.js';
+import { makeItem } from './game/entity.js';
+import { ITEMS } from './data/items.js';
 import { moveOrAttack, wait, pickUp, useItem, descend } from './game/actions.js';
 import { Memorial, browserStorage } from './game/memorial.js';
 import { THEME } from './data/theme.js';
@@ -31,7 +33,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
 
 newGame();
 
@@ -65,6 +67,6 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
 
 newGame();
