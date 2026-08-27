@@ -27,7 +27,8 @@ export const MONSTERS = {
   },
   herald: {
     name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
-    boss: true, maxHp: 26, power: 5, defense: 2, speed: 105, xp: 70,
+    boss: true, bossTrait: 'callTheRoll',
+    maxHp: 21, power: 5, defense: 2, speed: 105, xp: 70,
     drops: ['brassSeal', 'heraldsPollaxe'],
     entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
   },
@@ -50,11 +51,12 @@ export const MONSTERS = {
     weight: 5, minDepth: 4, maxHp: 12, power: 3, defense: 1, speed: 100, xp: 26,
     ranged: { power: 5, range: 5, reload: 3 },
   },
-  saintAmbrose: {
-    name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
-    boss: true, maxHp: 44, power: 8, defense: 3, speed: 100, xp: 140,
+  saintPerpetua: {
+    name: 'Saint Perpetua the Patient', glyph: 'S', color: 'boss',
+    boss: true, bossTrait: 'risesAgain',
+    maxHp: 31, power: 7, defense: 3, speed: 100, xp: 140,
     drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
-    entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
+    entrance: 'A saint sits up, brushes herself off, and apologises for the state of the room.',
   },
 
   // -- The Choir: the floor where the game stops being mundane ---------------
@@ -75,9 +77,10 @@ export const MONSTERS = {
     weight: 4, minDepth: 7, maxHp: 16, power: 3, defense: 1, speed: 110, xp: 36,
     ranged: { power: 6, range: 6, reload: 3 },
   },
-  theVoice: {
-    name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
-    boss: true, maxHp: 58, power: 10, defense: 4, speed: 115, xp: 220,
+  odoThePrecentor: {
+    name: 'Odo the Precentor', glyph: 'V', color: 'boss',
+    boss: true, bossTrait: 'carries',
+    maxHp: 48, power: 9, defense: 4, speed: 115, xp: 220,
     drops: ['goldSeal', 'vestmentOfTheChoir', 'psalmOfWard'],
     entrance: 'The singing stops. This is much worse.',
   },
@@ -100,11 +103,12 @@ export const MONSTERS = {
     weight: 4, minDepth: 10, maxHp: 20, power: 4, defense: 2, speed: 110, xp: 52,
     ranged: { power: 8, range: 6, reload: 3 },
   },
-  whatYouCameFor: {
-    name: 'What You Came For', glyph: '&', color: 'boss',
-    boss: true, maxHp: 84, power: 12, defense: 5, speed: 110, xp: 400,
+  baudouin: {
+    name: 'Sir Baudouin IX the Unreturned', glyph: '@', color: 'boss',
+    boss: true, bossTrait: 'mirrors',
+    maxHp: 72, power: 11, defense: 5, speed: 100, xp: 400,
     drops: ['theRelic'],
-    entrance: 'It is smaller than the songs implied. It knows your name, and both of the others.',
+    entrance: 'A crusader is sitting against the far wall, and he stands up when he sees you.',
   },
 };
 

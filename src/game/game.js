@@ -5,6 +5,7 @@ import { Level } from '../world/level.js';
 import { Tiles } from '../world/tiles.js';
 import { makePlayer, makeMonster, makeItem, makeRevenant } from './entity.js';
 import { smiteNearest } from './effects.js';
+import { prepareBoss } from './bosses.js';
 import { takeAiTurn } from './ai.js';
 import { tickStatuses, tickReload, tickBlock, effectiveSpeed, equipped } from './status.js';
 import { tickRegeneration } from './progress.js';
@@ -13,6 +14,7 @@ import { MONSTERS, monsterTable } from '../data/monsters.js';
 import { ITEMS, itemTable } from '../data/items.js';
 import { regionForDepth, isBossDepth } from '../data/regions.js';
 import { crusaderName, ordinal } from '../data/names.js';
+import { GATE_CHAPTERS, BOSS_LORE } from '../data/lore.js';
 import { THEME } from '../data/theme.js';
 
 const ACT_COST = 100;
@@ -39,6 +41,13 @@ export class Game {
     this.state = 'playing';
     this.turn = 0;
     this.echoes = [];
+
+    // Story cards wait in a queue and are shown one at a time. Seen-sets are
+    // per run: the story is told again to the next crusader, because it is the
+    // crusade telling it and the crusade repeats itself.
+    this.storyQueue = [];
+    this.chaptersSeen = new Set();
+    this.loreSeen = new Set();
     this.runRecorded = false;
 
     this.crusaderName = crusaderName(this.rng);
@@ -144,7 +153,9 @@ export class Game {
     const lastRoom = this.level.rooms[this.level.rooms.length - 1];
     const spot = this.freeSpotInRoom(lastRoom) ?? this.freeSpotInRoom(this.level.rooms[1]);
     if (!spot) return;
-    this.level.add(makeMonster(spec, spot.x, spot.y));
+    const boss = makeMonster(spec, spot.x, spot.y);
+    prepareBoss(this, boss);
+    this.level.add(boss);
     this.bossSpec = spec;
   }
 
@@ -285,21 +296,70 @@ export class Game {
 
     if (this.player.alive) {
       this.level.updateFov(this.player, this.theme.fovRadius);
+      this.announceGate();
       this.announceBoss();
     } else {
       this.finishRun(this.lastAttacker ?? 'the dungeon');
     }
   }
 
-  /** Bosses get one line, the first time you actually lay eyes on them. */
+  /**
+   * The sealed gate is where the crusade's own account of the first crusader
+   * is told, a chapter at a time. Triggered by seeing the gate rather than by
+   * arriving on the floor, so the story lands where the obstacle is.
+   */
+  announceGate() {
+    if (!this.level.sealed || !this.level.stairs) return;
+    if (this.chaptersSeen.has(this.region.key)) return;
+    if (!this.level.visible.get(this.level.stairs.x, this.level.stairs.y)) return;
+
+    const chapter = GATE_CHAPTERS[this.region.key];
+    if (!chapter) return;
+    this.chaptersSeen.add(this.region.key);
+    this.tellStory({ kind: 'chapter', title: chapter.title, lines: chapter.lines });
+  }
+
+  /** Bosses get their history, the first time you actually lay eyes on them. */
   announceBoss() {
     for (const e of this.level.entities) {
       if (!e.boss || !e.alive || e.announced) continue;
       if (!this.level.visible.get(e.x, e.y)) continue;
       e.announced = true;
-      const spec = MONSTERS[this.region.boss];
+
+      const key = this.region.boss;
+      const spec = MONSTERS[key];
       if (spec?.entrance) this.log(spec.entrance, 'mythic');
+
+      const lore = BOSS_LORE[key];
+      if (lore && !this.loreSeen.has(key)) {
+        this.loreSeen.add(key);
+        this.tellStory({
+          kind: 'boss', title: lore.title, lines: lore.lines, mechanic: lore.mechanic,
+        });
+      }
     }
+  }
+
+  tellStory(card) {
+    this.storyQueue.push(card);
+  }
+
+  /** The card currently waiting to be read, if any. */
+  pendingStory() {
+    return this.storyQueue[0] ?? null;
+  }
+
+  dismissStory() {
+    return this.storyQueue.shift() ?? null;
+  }
+
+  /** A crusader may name themselves. Their revenants keep whatever they chose. */
+  renameCrusader(name) {
+    const cleaned = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!cleaned) return false;
+    this.crusaderName = cleaned;
+    this.player.name = cleaned;
+    return true;
   }
 
   runMonsterTurns() {

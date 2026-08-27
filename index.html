@@ -16,66 +16,72 @@
     --mono: "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  /* The whole game lives inside one viewport. Nothing here may make the page
+     scroll: the map scales to the space it is given, and the only thing with
+     its own scrollbar is the message log. */
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
     font-family: var(--mono);
-    font-size: 13px;
-    min-height: 100vh;
+    font-size: 12px;
+    overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    padding: 10px;
+    gap: 10px;
   }
-  main { display: flex; gap: 16px; align-items: flex-start; max-width: 100%; }
-  #screen {
-    display: block;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    image-rendering: pixelated;
-    max-width: 100%;
+  main {
+    display: flex; gap: 10px; width: 100%; height: 100%;
+    align-items: stretch; min-width: 0;
   }
+  #stage {
+    position: relative; flex: 1; min-width: 0; display: flex;
+    align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+  }
+  #screen { display: block; background: var(--bg); image-rendering: pixelated; }
   aside {
-    width: 286px;
+    width: 244px;
     flex: none;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 14px;
+    padding: 10px 11px;
+    display: flex; flex-direction: column; gap: 7px;
+    overflow: hidden;
   }
-  h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
-  #tagline { color: var(--dim); font-size: 11px; margin: 3px 0 14px; line-height: 1.4; }
-  section { margin-bottom: 14px; }
+  aside section { margin: 0; }
+  h1 { font-size: 13px; margin: 0; letter-spacing: 0.02em; }
+  #tagline { display: none; }
   h2 {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--dim); margin: 0 0 3px; font-weight: 600;
   }
-  #depth { font-size: 13px; margin-bottom: 6px; }
+  #depth { font-size: 11px; margin-bottom: 4px; }
   #hp-bar, #xp-bar {
-    height: 8px; background: #05070a; border-radius: 2px;
-    overflow: hidden; margin-bottom: 4px;
+    height: 7px; background: #05070a; border-radius: 2px;
+    overflow: hidden; margin-bottom: 2px;
   }
-  #xp-bar { height: 4px; margin-top: 6px; }
+  #xp-bar { height: 3px; margin-top: 4px; }
   #xp-fill { height: 100%; width: 0; transition: width 120ms linear; }
-  #level { margin-top: 8px; font-size: 12px; }
-  #xp-text { color: var(--dim); font-size: 10px; }
+  #level { margin-top: 5px; font-size: 11px; }
+  #xp-text { color: var(--dim); font-size: 9.5px; }
   @media (prefers-reduced-motion: reduce) { #xp-fill { transition: none; } }
   #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
-  #hp-text, #stats { color: var(--dim); font-size: 11px; }
+  #hp-text, #stats { color: var(--dim); font-size: 10.5px; }
   ul { list-style: none; margin: 0; padding: 0; }
-  #inventory li, #help li, #worn li { padding: 2px 0; font-size: 11px; }
-  #inventory li[data-item], #worn li[data-item] {
+  #inventory li, #help li, #worn li { padding: 1px 0; font-size: 10.5px; }
+  #inventory li[data-source], #worn li[data-source] {
     display: flex; align-items: baseline; gap: 6px; cursor: help;
     border-radius: 2px; padding: 2px 3px; margin: 0 -3px;
   }
-  #inventory li[data-item]:hover, #worn li[data-item]:hover,
-  #inventory li[data-item]:focus, #worn li[data-item]:focus {
+  #inventory li[data-source]:hover, #worn li[data-source]:hover,
+  #inventory li[data-source]:focus, #worn li[data-source]:focus {
     background: #05070a; outline: none;
   }
-  #inventory li[data-item]:focus-visible, #worn li[data-item]:focus-visible {
+  #inventory li[data-source]:focus-visible, #worn li[data-source]:focus-visible {
     outline: 1px solid var(--dim);
   }
   .iname { flex: 1; }
@@ -114,40 +120,92 @@
     border-top: 1px solid var(--line); padding-top: 7px;
   }
   #worn li { display: flex; gap: 8px; }
-  #worn .slot { color: var(--dim); width: 52px; flex: none; }
+  #worn .slot { color: var(--dim); width: 44px; flex: none; }
   #worn .empty { color: var(--dim); }
-  .stat { margin-right: 10px; color: var(--dim); font-size: 11px; }
+  .stat { margin-right: 8px; color: var(--dim); font-size: 10.5px; }
   .stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
+  #help {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px;
+  }
+  #help li { display: flex; justify-content: space-between; gap: 4px; color: var(--dim); }
   #inventory .empty { color: var(--dim); }
   kbd {
     font-family: inherit; font-size: 10px; background: #05070a;
     border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; color: var(--text);
   }
   #log {
-    height: 190px; overflow-y: auto; font-size: 11px; line-height: 1.45;
-    border-top: 1px solid var(--line); padding-top: 8px;
+    flex: 1; min-height: 54px; overflow-y: auto; font-size: 10.5px;
+    line-height: 1.4; border-top: 1px solid var(--line); padding-top: 6px;
+    scrollbar-width: thin;
   }
   #log li { margin-bottom: 2px; }
   #log em { font-style: normal; color: var(--dim); }
-  #seed { color: var(--dim); font-size: 10px; margin-top: 12px; }
-  #crusader { color: var(--dim); font-size: 10px; margin-top: 8px; letter-spacing: 0.02em; }
-  #region { font-size: 12px; letter-spacing: 0.04em; }
+  #seed { color: var(--dim); font-size: 9px; }
+  #crusader-row { display: flex; align-items: baseline; gap: 6px; margin-top: 5px; }
+  #crusader { color: var(--dim); font-size: 9.5px; flex: 1; min-width: 0; }
+  #rename {
+    font: inherit; font-size: 9px; color: var(--dim); background: none;
+    border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+    cursor: pointer; flex: none;
+  }
+  #rename:hover, #rename:focus-visible { color: var(--text); border-color: var(--dim); }
+  #rename-input {
+    font: inherit; font-size: 10px; width: 100%; color: var(--text);
+    background: #05070a; border: 1px solid var(--dim); border-radius: 3px;
+    padding: 2px 4px;
+  }
+  #region { font-size: 11px; letter-spacing: 0.04em; }
   .tag {
     display: inline-block; font-size: 10px; padding: 1px 5px; margin: 1px 0;
     border: 1px solid var(--line); border-radius: 3px;
   }
   #seals .empty, #statuses:empty { color: var(--dim); font-size: 10px; }
   body.over #screen { filter: saturate(0.3) brightness(0.7); }
-  @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
+
+  #story {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to top, rgba(6, 6, 8, 0.98) 78%, rgba(6, 6, 8, 0));
+    padding: 26px 22px 16px;
+    animation: story-in 220ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) { #story { animation: none; } }
+  @keyframes story-in { from { opacity: 0; transform: translateY(8px); } }
+  #story[hidden] { display: none; }
+  #story-title {
+    margin: 0 0 7px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.09em; text-transform: uppercase; color: var(--gold, #e0b25c);
+  }
+  #story-lines p {
+    margin: 0 0 6px; font-size: 12px; line-height: 1.6;
+    max-width: 68ch; color: var(--text);
+  }
+  #story-mechanic {
+    margin-top: 8px; font-size: 11px; font-style: italic; color: #b49ad6;
+  }
+  #story-mechanic:empty { display: none; }
+  #story-dismiss {
+    margin-top: 10px; font-size: 9.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  /* Never stack: a column layout collapses the map to nothing and puts the
+     page into a scrollbar. Narrow the panel instead and let the map scale. */
+  @media (max-width: 1000px) { aside { width: 204px; } }
+  @media (max-width: 760px) { aside { width: 172px; } body { font-size: 11px; } }
 </style>
 </head>
 <body>
 <main>
-  <canvas id="screen"></canvas>
+  <div id="stage">
+    <canvas id="screen"></canvas>
+    <div id="story" hidden aria-live="polite">
+      <h2 id="story-title"></h2>
+      <div id="story-lines"></div>
+      <div id="story-mechanic"></div>
+      <div id="story-dismiss">press any key to continue</div>
+    </div>
+  </div>
   <aside>
     <h1 id="title"></h1>
-    <p id="tagline"></p>
 
     <section>
       <div id="region"></div>
@@ -159,7 +217,12 @@
       <div id="xp-text"></div>
       <div id="stats"></div>
       <div id="statuses"></div>
-      <div id="crusader"></div>
+      <div id="crusader-row">
+        <span id="crusader"></span>
+        <button id="rename" type="button">rename</button>
+        <input id="rename-input" type="text" maxlength="40" hidden
+               aria-label="Name your crusader">
+      </div>
     </section>
 
     <section>

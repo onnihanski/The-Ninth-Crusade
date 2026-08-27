@@ -16,8 +16,9 @@ import { TRAITS, heirloomBonus } from '../src/data/traits.js';
 import { attunedAmount } from '../src/game/effects.js';
 import { keyToIntent } from '../src/ui/input.js';
 import { xpToNext, tickRegeneration } from '../src/game/progress.js';
-import { mitigate } from '../src/game/combat.js';
+import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
+import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
 import { takeAiTurn } from '../src/game/ai.js';
 import { chebyshev } from '../src/engine/grid.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
@@ -158,7 +159,13 @@ section('a full crusade');
       const loot = g.level.entities.filter((e) => e.item);
       for (const drop of loot) {
         if (!drop.item.seal && !drop.item.victory) continue;
-        if (!walkTo(g, drop.x, drop.y)) continue;
+        // Something the Herald called up may be standing on the seal. A player
+        // would kill it and step on; so does this.
+        if (!walkTo(g, drop.x, drop.y)) {
+          const inTheWay = g.level.blockerAt(drop.x, drop.y);
+          if (inTheWay && inTheWay !== g.player) killEntity(g, inTheWay);
+          if (!walkTo(g, drop.x, drop.y)) continue;
+        }
         pickUp(g, g.player);
       }
     }
@@ -1233,6 +1240,192 @@ section('traits are described where they are implemented');
   check('briefs surface an heirloom when one exists',
     describeItem(ITEMS.censerFlail, { heirloom: { of: 'X', deepest: 9, marks: 2 } })
       .heirloom.bonus === 3);
+}
+
+// --- the story of the first crusader ---------------------------------------
+section('the story');
+{
+  check('every region with a gate has a chapter',
+    REGIONS.filter((r) => !r.final).every((r) => Boolean(GATE_CHAPTERS[r.key])));
+  check('every boss has lore', REGIONS.every((r) => Boolean(BOSS_LORE[r.boss])));
+  check('every mini-boss lore names its mechanic',
+    REGIONS.filter((r) => !r.final).every((r) => BOSS_LORE[r.boss].mechanic?.length > 8));
+
+  // The whole point of the structure: nothing before the meeting may give it
+  // away. If a future edit leaks the twist into a gate chapter, this fails.
+  const GIVEAWAYS = [
+    'still here', 'still alive', 'turned', 'betray', 'enemy', 'kill him',
+    'knows your name', 'waiting for', 'he is the', 'fight him',
+  ];
+  const chapterText = Object.values(GATE_CHAPTERS)
+    .flatMap((c) => c.lines).join(' ').toLowerCase();
+  check('no gate chapter gives away what he became',
+    GIVEAWAYS.every((phrase) => !chapterText.includes(phrase)));
+  check('the reveal is the only place it is told',
+    REVEAL.lines.join(' ').toLowerCase().includes('waiting for'));
+  check('the final boss lore is the reveal',
+    BOSS_LORE.baudouin.lines === REVEAL.lines);
+  check('the first crusader is the final boss',
+    MONSTERS[REGIONS[REGIONS.length - 1].boss].name === FIRST_CRUSADER);
+
+  // Triggering.
+  const g = invincible(new Game({ seed: 3001, memorial: new Memorial(memoryStorage()) }));
+  check('no story is waiting on an ordinary floor', g.pendingStory() === null);
+
+  g.buildLevel(3);
+  g.player.x = g.level.stairs.x;
+  g.player.y = g.level.stairs.y;
+  g.playerActed();
+  const first = g.pendingStory();
+  check('seeing the gate tells the first chapter',
+    first?.title === GATE_CHAPTERS.siegeYards.title);
+
+  g.dismissStory();
+  const second = g.pendingStory();
+  check('the boss in the gate room introduces itself too',
+    second?.title === BOSS_LORE.herald.title && second.mechanic?.length > 0);
+  g.dismissStory();
+
+  for (let i = 0; i < 5; i++) g.playerActed();
+  check('neither is told twice', g.pendingStory() === null);
+
+  check('each region tells its own chapter once', (() => {
+    const h = invincible(new Game({ seed: 3002, memorial: new Memorial(memoryStorage()) }));
+    const titles = [];
+    for (const depth of [3, 6, 9]) {
+      h.buildLevel(depth);
+      h.player.x = h.level.stairs.x;
+      h.player.y = h.level.stairs.y;
+      h.playerActed();
+      while (h.pendingStory()) titles.push(h.dismissStory().title);
+    }
+    return titles.includes(GATE_CHAPTERS.siegeYards.title)
+      && titles.includes(GATE_CHAPTERS.reliquary.title)
+      && titles.includes(GATE_CHAPTERS.choir.title);
+  })());
+
+  check('the reveal waits for the bottom', (() => {
+    const d = invincible(new Game({ seed: 3003, memorial: new Memorial(memoryStorage()) }));
+    d.buildLevel(12);
+    const boss = d.level.entities.find((e) => e.boss);
+    d.player.x = boss.x + 1;
+    d.player.y = boss.y;
+    d.playerActed();
+    return d.pendingStory()?.title === FIRST_CRUSADER;
+  })());
+}
+
+// --- boss mechanics --------------------------------------------------------
+section('boss mechanics');
+{
+  const bossArena = (depth) => {
+    const g = invincible(new Game({ seed: 3100 + depth, memorial: new Memorial(memoryStorage()) }));
+    g.buildLevel(depth);
+    const boss = g.level.entities.find((e) => e.boss);
+    g.level.entities.filter((e) => e.ai && !e.boss).forEach((e) => g.level.remove(e));
+    g.player.x = boss.x + 2;
+    g.player.y = boss.y;
+    g.level.updateFov(g.player, g.theme.fovRadius);
+    return { g, boss };
+  };
+
+  // The Herald reads the roll, and names answer.
+  {
+    const { g, boss } = bossArena(3);
+    check('the Herald calls the roll', boss.bossTrait === 'callTheRoll');
+    const before = g.level.entities.filter((e) => e.ai && !e.boss).length;
+    for (let i = 0; i < 40; i++) takeAiTurn(g, boss);
+    const after = g.level.entities.filter((e) => e.ai && !e.boss).length;
+    check('names answer to it', after > before);
+    check('it announces the call',
+      g.messages.some((m) => m.text.includes('reads out a name')));
+    for (let i = 0; i < 200; i++) takeAiTurn(g, boss);
+    check('but only so many of them',
+      g.level.entities.filter((e) => e.ai && !e.boss).length <= before + 4);
+  }
+
+  // Saint Perpetua declines to stay dead, once.
+  {
+    const { g, boss } = bossArena(6);
+    check('the saint rises again', boss.bossTrait === 'risesAgain');
+    damage(g, boss, 9999, g.player);
+    check('killing her the first time does not', boss.alive && boss.hp > 0);
+    check('she gets back up with less of her', boss.hp < boss.maxHp);
+    check('and says so', g.messages.some((m) => m.text.includes('gets up again')));
+    damage(g, boss, 9999, g.player);
+    check('the second time takes', !boss.alive);
+    check('she does not rise twice', boss.hasRisen === true);
+  }
+
+  // Odo reaches you wherever he can be heard.
+  {
+    const { g, boss } = bossArena(9);
+    check('the Precentor carries', boss.bossTrait === 'carries');
+    check('his voice has no useful range limit', boss.ranged?.range > 20);
+    const room = g.level.rooms[0];
+    g.player.x = room.cx;
+    g.player.y = room.cy;
+    boss.x = room.cx;
+    boss.y = room.cy + 1;                      // same room, then step apart
+    g.level.updateFov(g.player, g.theme.fovRadius);
+    const hp = g.player.hp;
+    for (let i = 0; i < 10; i++) takeAiTurn(g, boss);
+    check('he strikes without closing', g.player.hp < hp);
+  }
+
+  // Baudouin has watched nine crusades fight.
+  {
+    const g = invincible(new Game({ seed: 3200, memorial: new Memorial(memoryStorage()) }));
+    g.player.power = 30;
+    g.player.defense = 12;
+    g.player.equipment.weapon = makeItem(
+      { key: 'martyrsGreatsword', ...ITEMS.martyrsGreatsword }, 0, 0);
+    g.buildLevel(12);
+    const boss = g.level.entities.find((e) => e.boss);
+    check('Baudouin mirrors', boss.bossTrait === 'mirrors' && boss.mirrored === true);
+    check('he answers your power', boss.power > MONSTERS.baudouin.power);
+    check('he answers your defense', boss.defense > MONSTERS.baudouin.defense);
+    check('he picks up your weapon', boss.equipment?.weapon?.item.key === 'martyrsGreatsword');
+    check('and therefore your trait', hasTrait(boss, 'cleave'));
+
+    // Not invincible(): that helper sets power 500, which would make the
+    // "modest" crusader the strongest thing in the test.
+    const weak = new Game({ seed: 3201, memorial: new Memorial(memoryStorage()) });
+    weak.buildLevel(12);
+    const mild = weak.level.entities.find((e) => e.boss);
+    check('a modest crusader meets a modest Baudouin', mild.power < boss.power);
+  }
+}
+
+// --- naming yourself -------------------------------------------------------
+section('naming yourself');
+{
+  const g = new Game({ seed: 3300, memorial: new Memorial(memoryStorage()) });
+  const generated = g.crusaderName;
+  check('a crusader is named for you if you do not', generated.length > 0);
+
+  check('you can take the name yourself', g.renameCrusader('Onni the Unhurried')
+    && g.crusaderName === 'Onni the Unhurried' && g.player.name === 'Onni the Unhurried');
+  check('whitespace is tidied', g.renameCrusader('  Onni   the   Brief  ')
+    && g.crusaderName === 'Onni the Brief');
+  check('an empty name is refused',
+    g.renameCrusader('   ') === false && g.crusaderName === 'Onni the Brief');
+  check('a name cannot run away with the panel',
+    g.renameCrusader('x'.repeat(200)) && g.crusaderName.length === 40);
+
+  check('the memorial remembers the name you chose', (() => {
+    const memorial = new Memorial(memoryStorage());
+    const run = new Game({ seed: 3301, memorial });
+    run.buildLevel(5);
+    run.renameCrusader('Onni the Unhurried');
+    run.finishRun('a bonepicker');
+
+    const next = new Game({ seed: 3302, memorial });
+    next.buildLevel(5);
+    const revenant = next.level.entities.find((e) => e.revenant);
+    return memorial.entries[0].name === 'Onni the Unhurried'
+      && revenant.name.includes('Onni the Unhurried');
+  })());
 }
 
 // --- long random playthroughs ----------------------------------------------

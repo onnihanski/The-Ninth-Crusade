@@ -20,7 +20,7 @@ export const REGIONS = [
     arrival: 'Shelves of saints, filed by which part of them survived. Someone kept excellent records and then stopped.',
     depths: [4, 6],
     monsters: ['bonepicker', 'reliquaryMoth', 'ossuaryWarden', 'boneSlinger'],
-    boss: 'saintAmbrose',
+    boss: 'saintPerpetua',
     palette: { wall: '#5f5a63', floor: '#847d86' },
   },
   {
@@ -29,7 +29,7 @@ export const REGIONS = [
     arrival: 'The singing has been going on longer than the building. You try not to learn the words.',
     depths: [7, 9],
     monsters: ['chorister', 'censerbearer', 'wingedThing', 'psalmist'],
-    boss: 'theVoice',
+    boss: 'odoThePrecentor',
     palette: { wall: '#4d5a6b', floor: '#6f8199' },
   },
   {
@@ -38,7 +38,7 @@ export const REGIONS = [
     arrival: 'It is empty in the way a held breath is empty. You are, at last, expected.',
     depths: [10, 12],
     monsters: ['graveWraith', 'pilgrimHusk', 'sepulchreWorm', 'mourner'],
-    boss: 'whatYouCameFor',
+    boss: 'baudouin',
     final: true,
     palette: { wall: '#3f3a44', floor: '#5c5563' },
   },

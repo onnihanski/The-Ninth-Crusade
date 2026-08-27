@@ -5,6 +5,7 @@ import {
 } from './status.js';
 import { gainXp, xpValue } from './progress.js';
 import { CLINCH_PENALTY, RIPOSTE_SHARE } from '../data/traits.js';
+import { bossRises } from './bosses.js';
 
 // Defense mitigates a *proportion* of the blow rather than subtracting from it.
 //
@@ -122,6 +123,9 @@ export function damage(game, target, amount, source = null) {
     game.log(game.theme.strings.death, 'bad');
     return;
   }
+
+  // Some things decline to be finished the first time.
+  if (target.boss && bossRises(game, target)) return;
 
   game.log(capitalize(article(target)) + ' is finished.', 'good');
   if (source?.isPlayer) gainXp(game, source, xpValue(target));

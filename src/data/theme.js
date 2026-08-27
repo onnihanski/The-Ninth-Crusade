@@ -14,6 +14,7 @@ export const THEME = {
   tagline: 'descend, unseal, be remembered',
 
   font: '16px "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
+  fontFamily: '"IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
   cell: { w: 14, h: 20 },
   fovRadius: 8,
 

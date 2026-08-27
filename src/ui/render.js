@@ -12,6 +12,26 @@ export class Renderer {
     this.cellH = theme.cell.h;
   }
 
+  /**
+   * Scale the glyph grid to the space available rather than assuming a fixed
+   * cell size. This is what keeps the whole game inside one viewport on any
+   * screen instead of pushing the page into a scrollbar.
+   */
+  fit(availableWidth, availableHeight, cols, rows) {
+    const RATIO = 0.62;                        // a monospace cell is taller than wide
+    let cellH = Math.floor(availableHeight / rows);
+    let cellW = Math.round(cellH * RATIO);
+
+    if (cellW * cols > availableWidth) {
+      cellW = Math.floor(availableWidth / cols);
+      cellH = Math.round(cellW / RATIO);
+    }
+
+    this.cellW = Math.max(4, cellW);
+    this.cellH = Math.max(7, cellH);
+    this.resize(cols, rows);
+  }
+
   resize(widthInCells, heightInCells) {
     const dpr = globalThis.devicePixelRatio || 1;
     const w = widthInCells * this.cellW;
@@ -30,7 +50,8 @@ export class Renderer {
 
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.font = theme.font;
+    ctx.font = Math.round(this.cellH * 0.78) + 'px '
+      + (theme.fontFamily ?? 'monospace');
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
 

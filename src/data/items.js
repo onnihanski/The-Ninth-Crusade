@@ -196,9 +196,9 @@ export const ITEMS = {
       + 'other person\'s patience.',
   }),
   aegisOfAmbrose: gear({
-    name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
+    name: 'aegis of Saint Perpetua', glyph: '(', slot: 'shield', rarity: 'sacred',
     defense: 4, speed: -5, trait: 'riposte',
-    flavour: 'It did not work for him either, but it took longer.',
+    flavour: 'It did not work for her either, but it took longer.',
     lore: 'The saint was interred holding it and declined to let go. It weighs '
       + 'a quarter of what it looks like, and the arm straps adjust themselves '
       + 'to the wearer, which nobody has asked it to stop doing.',

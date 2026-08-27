@@ -61,6 +61,13 @@ Seals are kept, not spent. Relics are spent: a **reliquary phial** heals, a
 makes you harder to reach for a while, and a **step of the absent** puts you
 somewhere else entirely.
 
+## Naming yourself
+
+Press `n`, or click **rename** in the panel. The name sticks for future runs and
+picks up a numeral — name yourself once and your successors are II, III, IV.
+Whatever you choose is what the memorial records, so your revenants come back
+wearing it.
+
 ## Starting out
 
 You are issued an arming sword and a padded gambeson, 26 hit points, and no
@@ -180,9 +187,10 @@ It runs two policies — `clear` (fights the floor, takes the loot, then descend
 and `dive` (fights what is in the way and little else) — and takes
 `BALANCE_DISABLE=reach,attune` to strip named mechanics from the item data, so
 any one of them can be measured rather than guessed at. As of the current
-numbers, a thorough crusader wins about **34%** of the time, reaches a median
-depth of 9 at a median level of 10, and dies on every floor of the dungeon
-rather than piling up against one wall. The harness plays melee only and never
+numbers, a thorough crusader wins about **21%** of the time, reaches a median
+depth of 11 at a median level of 14, and dies on every floor of the dungeon —
+with the largest single share on the last one, which is where the hardest fight
+in the game is supposed to be. The harness plays melee only and never
 picks up a bow, so it is a floor on the real number, not the number. A hurried one dies at the first boss,
 every time, which is the intended lesson.
 
@@ -248,12 +256,27 @@ that number is flat across a session instead of climbing to 100%.
 
 ## The dungeon
 
-| Depths | Region           | Boss                                    |
-|--------|------------------|-----------------------------------------|
-| 1–3    | The Siege Yards  | the Herald of the Third Wall            |
-| 4–6    | The Reliquary    | Saint Ambrose, Who Would Not Stay Buried|
-| 7–9    | The Choir        | the Voice in the Vaults                 |
-| 10–12  | The Empty Tomb   | What You Came For                       |
+Every boss does exactly what its lore panel says it does. The panel is written
+from the mechanic rather than the other way round, so reading it tells you what
+is about to happen and you still have to solve it.
+
+| Depths | Region | Boss | What it does |
+|---|---|---|---|
+| 1–3 | The Siege Yards | the Herald of the Third Wall | Reads the roll. Names answer, and arrive. |
+| 4–6 | The Reliquary | Saint Perpetua the Patient | Killing her is the first half of it. |
+| 7–9 | The Choir | Odo the Precentor | Reaches you wherever he can be heard — range is not a thing that happens to a voice. |
+| 10–12 | The Empty Tomb | **Sir Baudouin IX the Unreturned** | Fights the way you fight. He has had practice. |
+
+## The story
+
+Sir Baudouin IX went down first, before the crusade had a number. His story is
+told in three chapters, one at each sealed gate — the crusade's own account of
+him, which is admiring and incomplete — and finished when you reach the bottom
+and find out why there were eight more crusades after his.
+
+The panels appear along the bottom of the map on first sight and cost no turn to
+read. A test asserts that no gate chapter contains any of the phrases that would
+give the ending away, so a future edit cannot leak the twist into a chapter.
 
 Each region retints the palette and fields its own monsters, so descending
 feels like arriving somewhere rather than incrementing a counter.
@@ -272,7 +295,8 @@ src/
     mapgen.js      rooms-and-corridors generation
     level.js       one floor: terrain, entities, visibility
   game/      rules (no DOM anywhere -- this is why it is testable)
-    game.js        state, turn scheduler, regions, gates, endings
+    game.js        state, turn scheduler, regions, gates, story triggers
+    bosses.js      the four boss mechanics, one per story
     entity.js      entities as bags of optional components
     actions.js     move, attack, take, use, descend
     combat.js      damage resolution, death, drops
@@ -281,12 +305,13 @@ src/
     status.js      derived stats -- gear, traits, statuses, heirlooms
     progress.js    experience, levels, regeneration
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
-  ui/        browser layer
+  ui/        browser layer -- the whole game fits one viewport, never scrolls
     render.js      canvas glyph renderer
     input.js       key bindings
     panel.js       stats, seals, pack, message log
   data/      >>> the theme seam <<<
     theme.js       palette, flavour strings, tone
+    lore.js        the first crusader's story, and each boss's history
     regions.js     the four regions and their bosses
     monsters.js    monster roster
     items.js       relics, arms, armour and seals
@@ -294,7 +319,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    218 assertions, including a full run to depth 12
+tests/smoke.mjs    256 assertions, including a full run to depth 12
 ```
 
 ### Tone

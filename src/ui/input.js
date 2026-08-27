@@ -33,6 +33,7 @@ export function keyToIntent(event) {
   if (key === 'g' || key === ',') return { type: 'pickup' };
   if (key === 'x') return { type: 'drop' };
   if (key === 'f') return { type: 'fire' };
+  if (key === 'n') return { type: 'rename' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -47,5 +48,6 @@ export const HELP = [
   ['use / wear', '1-9'],
   ['drop', 'x then 1-9'],
   ['descend', '>'],
+  ['name', 'n'],
   ['restart', 'r'],
 ];

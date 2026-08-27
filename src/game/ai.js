@@ -2,6 +2,7 @@ import { chebyshev } from '../engine/grid.js';
 import { stepDownhill, stepAway, UNREACHABLE } from '../engine/dijkstra.js';
 import { attack, shoot } from './combat.js';
 import { rangedProfile, canFire, tickReload } from './status.js';
+import { takeBossTurn } from './bosses.js';
 
 // Monster behaviour. Two shapes so far: things that close, and things that
 // keep their distance and shoot. The "can I see the player" test reuses the
@@ -19,6 +20,9 @@ export function takeAiTurn(game, monster) {
     wander(game, monster);
     return;
   }
+
+  // A boss's special comes before anything ordinary it might have done.
+  if (monster.boss && takeBossTurn(game, monster)) return;
 
   const profile = rangedProfile(monster);
   if (profile) {

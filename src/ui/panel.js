@@ -14,8 +14,8 @@ export class Panel {
     this.theme = theme;
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
-      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader',
-      'level', 'xp-fill', 'xp-text', 'tooltip']) {
+      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'crusader',
+      'level', 'xp-fill', 'xp-text', 'tooltip', 'rename']) {
       this.el[id] = root.querySelector('#' + id);
     }
 
@@ -24,7 +24,6 @@ export class Panel {
     this.kitSignature = null;
 
     this.el.title.textContent = theme.name;
-    this.el.tagline.textContent = theme.tagline;
     this.el.help.innerHTML = HELP
       .map(([label, keys]) => '<li><span>' + label + '</span><kbd>' + keys + '</kbd></li>')
       .join('');

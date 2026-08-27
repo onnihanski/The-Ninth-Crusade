@@ -16,66 +16,72 @@
     --mono: "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  /* The whole game lives inside one viewport. Nothing here may make the page
+     scroll: the map scales to the space it is given, and the only thing with
+     its own scrollbar is the message log. */
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
     font-family: var(--mono);
-    font-size: 13px;
-    min-height: 100vh;
+    font-size: 12px;
+    overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    padding: 10px;
+    gap: 10px;
   }
-  main { display: flex; gap: 16px; align-items: flex-start; max-width: 100%; }
-  #screen {
-    display: block;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    image-rendering: pixelated;
-    max-width: 100%;
+  main {
+    display: flex; gap: 10px; width: 100%; height: 100%;
+    align-items: stretch; min-width: 0;
   }
+  #stage {
+    position: relative; flex: 1; min-width: 0; display: flex;
+    align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+  }
+  #screen { display: block; background: var(--bg); image-rendering: pixelated; }
   aside {
-    width: 286px;
+    width: 244px;
     flex: none;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 14px;
+    padding: 10px 11px;
+    display: flex; flex-direction: column; gap: 7px;
+    overflow: hidden;
   }
-  h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
-  #tagline { color: var(--dim); font-size: 11px; margin: 3px 0 14px; line-height: 1.4; }
-  section { margin-bottom: 14px; }
+  aside section { margin: 0; }
+  h1 { font-size: 13px; margin: 0; letter-spacing: 0.02em; }
+  #tagline { display: none; }
   h2 {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--dim); margin: 0 0 3px; font-weight: 600;
   }
-  #depth { font-size: 13px; margin-bottom: 6px; }
+  #depth { font-size: 11px; margin-bottom: 4px; }
   #hp-bar, #xp-bar {
-    height: 8px; background: #05070a; border-radius: 2px;
-    overflow: hidden; margin-bottom: 4px;
+    height: 7px; background: #05070a; border-radius: 2px;
+    overflow: hidden; margin-bottom: 2px;
   }
-  #xp-bar { height: 4px; margin-top: 6px; }
+  #xp-bar { height: 3px; margin-top: 4px; }
   #xp-fill { height: 100%; width: 0; transition: width 120ms linear; }
-  #level { margin-top: 8px; font-size: 12px; }
-  #xp-text { color: var(--dim); font-size: 10px; }
+  #level { margin-top: 5px; font-size: 11px; }
+  #xp-text { color: var(--dim); font-size: 9.5px; }
   @media (prefers-reduced-motion: reduce) { #xp-fill { transition: none; } }
   #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
-  #hp-text, #stats { color: var(--dim); font-size: 11px; }
+  #hp-text, #stats { color: var(--dim); font-size: 10.5px; }
   ul { list-style: none; margin: 0; padding: 0; }
-  #inventory li, #help li, #worn li { padding: 2px 0; font-size: 11px; }
-  #inventory li[data-item], #worn li[data-item] {
+  #inventory li, #help li, #worn li { padding: 1px 0; font-size: 10.5px; }
+  #inventory li[data-source], #worn li[data-source] {
     display: flex; align-items: baseline; gap: 6px; cursor: help;
     border-radius: 2px; padding: 2px 3px; margin: 0 -3px;
   }
-  #inventory li[data-item]:hover, #worn li[data-item]:hover,
-  #inventory li[data-item]:focus, #worn li[data-item]:focus {
+  #inventory li[data-source]:hover, #worn li[data-source]:hover,
+  #inventory li[data-source]:focus, #worn li[data-source]:focus {
     background: #05070a; outline: none;
   }
-  #inventory li[data-item]:focus-visible, #worn li[data-item]:focus-visible {
+  #inventory li[data-source]:focus-visible, #worn li[data-source]:focus-visible {
     outline: 1px solid var(--dim);
   }
   .iname { flex: 1; }
@@ -114,40 +120,92 @@
     border-top: 1px solid var(--line); padding-top: 7px;
   }
   #worn li { display: flex; gap: 8px; }
-  #worn .slot { color: var(--dim); width: 52px; flex: none; }
+  #worn .slot { color: var(--dim); width: 44px; flex: none; }
   #worn .empty { color: var(--dim); }
-  .stat { margin-right: 10px; color: var(--dim); font-size: 11px; }
+  .stat { margin-right: 8px; color: var(--dim); font-size: 10.5px; }
   .stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
+  #help {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px;
+  }
+  #help li { display: flex; justify-content: space-between; gap: 4px; color: var(--dim); }
   #inventory .empty { color: var(--dim); }
   kbd {
     font-family: inherit; font-size: 10px; background: #05070a;
     border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; color: var(--text);
   }
   #log {
-    height: 190px; overflow-y: auto; font-size: 11px; line-height: 1.45;
-    border-top: 1px solid var(--line); padding-top: 8px;
+    flex: 1; min-height: 54px; overflow-y: auto; font-size: 10.5px;
+    line-height: 1.4; border-top: 1px solid var(--line); padding-top: 6px;
+    scrollbar-width: thin;
   }
   #log li { margin-bottom: 2px; }
   #log em { font-style: normal; color: var(--dim); }
-  #seed { color: var(--dim); font-size: 10px; margin-top: 12px; }
-  #crusader { color: var(--dim); font-size: 10px; margin-top: 8px; letter-spacing: 0.02em; }
-  #region { font-size: 12px; letter-spacing: 0.04em; }
+  #seed { color: var(--dim); font-size: 9px; }
+  #crusader-row { display: flex; align-items: baseline; gap: 6px; margin-top: 5px; }
+  #crusader { color: var(--dim); font-size: 9.5px; flex: 1; min-width: 0; }
+  #rename {
+    font: inherit; font-size: 9px; color: var(--dim); background: none;
+    border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+    cursor: pointer; flex: none;
+  }
+  #rename:hover, #rename:focus-visible { color: var(--text); border-color: var(--dim); }
+  #rename-input {
+    font: inherit; font-size: 10px; width: 100%; color: var(--text);
+    background: #05070a; border: 1px solid var(--dim); border-radius: 3px;
+    padding: 2px 4px;
+  }
+  #region { font-size: 11px; letter-spacing: 0.04em; }
   .tag {
     display: inline-block; font-size: 10px; padding: 1px 5px; margin: 1px 0;
     border: 1px solid var(--line); border-radius: 3px;
   }
   #seals .empty, #statuses:empty { color: var(--dim); font-size: 10px; }
   body.over #screen { filter: saturate(0.3) brightness(0.7); }
-  @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
+
+  #story {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to top, rgba(6, 6, 8, 0.98) 78%, rgba(6, 6, 8, 0));
+    padding: 26px 22px 16px;
+    animation: story-in 220ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) { #story { animation: none; } }
+  @keyframes story-in { from { opacity: 0; transform: translateY(8px); } }
+  #story[hidden] { display: none; }
+  #story-title {
+    margin: 0 0 7px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.09em; text-transform: uppercase; color: var(--gold, #e0b25c);
+  }
+  #story-lines p {
+    margin: 0 0 6px; font-size: 12px; line-height: 1.6;
+    max-width: 68ch; color: var(--text);
+  }
+  #story-mechanic {
+    margin-top: 8px; font-size: 11px; font-style: italic; color: #b49ad6;
+  }
+  #story-mechanic:empty { display: none; }
+  #story-dismiss {
+    margin-top: 10px; font-size: 9.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  /* Never stack: a column layout collapses the map to nothing and puts the
+     page into a scrollbar. Narrow the panel instead and let the map scale. */
+  @media (max-width: 1000px) { aside { width: 204px; } }
+  @media (max-width: 760px) { aside { width: 172px; } body { font-size: 11px; } }
 </style>
 </head>
 <body>
 <main>
-  <canvas id="screen"></canvas>
+  <div id="stage">
+    <canvas id="screen"></canvas>
+    <div id="story" hidden aria-live="polite">
+      <h2 id="story-title"></h2>
+      <div id="story-lines"></div>
+      <div id="story-mechanic"></div>
+      <div id="story-dismiss">press any key to continue</div>
+    </div>
+  </div>
   <aside>
     <h1 id="title"></h1>
-    <p id="tagline"></p>
 
     <section>
       <div id="region"></div>
@@ -159,7 +217,12 @@
       <div id="xp-text"></div>
       <div id="stats"></div>
       <div id="statuses"></div>
-      <div id="crusader"></div>
+      <div id="crusader-row">
+        <span id="crusader"></span>
+        <button id="rename" type="button">rename</button>
+        <input id="rename-input" type="text" maxlength="40" hidden
+               aria-label="Name your crusader">
+      </div>
     </section>
 
     <section>
@@ -872,9 +935,9 @@ const ITEMS = {
       + 'other person\'s patience.',
   }),
   aegisOfAmbrose: gear({
-    name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
+    name: 'aegis of Saint Perpetua', glyph: '(', slot: 'shield', rarity: 'sacred',
     defense: 4, speed: -5, trait: 'riposte',
-    flavour: 'It did not work for him either, but it took longer.',
+    flavour: 'It did not work for her either, but it took longer.',
     lore: 'The saint was interred holding it and declined to let go. It weighs '
       + 'a quarter of what it looks like, and the arm straps adjust themselves '
       + 'to the wearer, which nobody has asked it to stop doing.',
@@ -1095,6 +1158,7 @@ function makeMonster(spec, x, y) {
     ranged: spec.ranged ?? null,
     reloadLeft: 0,
     boss: spec.boss ?? false,
+    bossTrait: spec.bossTrait ?? null,
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
   });
@@ -1399,6 +1463,252 @@ function levelUp(game, actor) {
   game.log('Level ' + actor.level + '. ' + gains.join(', ') + '.', 'notable');
 }
 
+// ==== src/data/monsters.js =================
+// Monster roster, grouped by the region that fields them. Anything with
+// `boss: true` is placed deliberately rather than rolled, and `drops` is a list
+// of item keys spilled on death.
+//
+//   speed     100 = one turn per player turn; 160 acts half again as often
+//   minDepth  earliest floor it may be rolled on, within its region
+//   ranged    { power, range, reload } -- shoots instead of closing, and backs
+//             away when you get near. Nothing ranged appears on depth 1.
+const MONSTERS = {
+  // -- The Siege Yards: mundane, tired, hungry -------------------------------
+  campDog: {
+    name: 'camp dog', glyph: 'd', color: 'monsterWeak',
+    weight: 12, maxHp: 5, power: 3, defense: 0, speed: 150, xp: 4,
+  },
+  deserter: {
+    name: 'deserter', glyph: 'p', color: 'monsterWeak',
+    weight: 10, maxHp: 8, power: 3, defense: 1, speed: 100, xp: 6,
+  },
+  flagellant: {
+    name: 'flagellant', glyph: 'f', color: 'monsterTough',
+    weight: 7, maxHp: 10, power: 4, defense: 0, speed: 100, xp: 10,
+  },
+  crossbowman: {
+    name: 'deserter with a crossbow', glyph: 'x', color: 'monsterTough',
+    weight: 5, minDepth: 2, maxHp: 7, power: 2, defense: 0, speed: 100, xp: 16,
+    ranged: { power: 4, range: 5, reload: 3 },
+  },
+  herald: {
+    name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
+    boss: true, bossTrait: 'callTheRoll',
+    maxHp: 21, power: 5, defense: 2, speed: 105, xp: 70,
+    drops: ['brassSeal', 'heraldsPollaxe'],
+    entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
+  },
+
+  // -- The Reliquary: patient, dry, well-catalogued --------------------------
+  bonepicker: {
+    name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
+    weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100, xp: 14,
+  },
+  reliquaryMoth: {
+    name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
+    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170, xp: 12,
+  },
+  ossuaryWarden: {
+    name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
+    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80, xp: 24,
+  },
+  boneSlinger: {
+    name: 'bone slinger', glyph: 'b', color: 'monsterTough',
+    weight: 5, minDepth: 4, maxHp: 12, power: 3, defense: 1, speed: 100, xp: 26,
+    ranged: { power: 5, range: 5, reload: 3 },
+  },
+  saintPerpetua: {
+    name: 'Saint Perpetua the Patient', glyph: 'S', color: 'boss',
+    boss: true, bossTrait: 'risesAgain',
+    maxHp: 31, power: 7, defense: 3, speed: 100, xp: 140,
+    drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
+    entrance: 'A saint sits up, brushes herself off, and apologises for the state of the room.',
+  },
+
+  // -- The Choir: the floor where the game stops being mundane ---------------
+  chorister: {
+    name: 'chorister', glyph: 'c', color: 'monsterWeak',
+    weight: 10, maxHp: 14, power: 5, defense: 1, speed: 110, xp: 24,
+  },
+  censerbearer: {
+    name: 'censerbearer', glyph: 'C', color: 'monsterTough',
+    weight: 7, maxHp: 20, power: 6, defense: 2, speed: 100, xp: 32,
+  },
+  wingedThing: {
+    name: 'winged thing', glyph: 'A', color: 'monsterTough',
+    weight: 5, maxHp: 16, power: 8, defense: 1, speed: 150, xp: 30,
+  },
+  psalmist: {
+    name: 'psalmist', glyph: 'y', color: 'mythic',
+    weight: 4, minDepth: 7, maxHp: 16, power: 3, defense: 1, speed: 110, xp: 36,
+    ranged: { power: 6, range: 6, reload: 3 },
+  },
+  odoThePrecentor: {
+    name: 'Odo the Precentor', glyph: 'V', color: 'boss',
+    boss: true, bossTrait: 'carries',
+    maxHp: 48, power: 9, defense: 4, speed: 115, xp: 220,
+    drops: ['goldSeal', 'vestmentOfTheChoir', 'psalmOfWard'],
+    entrance: 'The singing stops. This is much worse.',
+  },
+
+  // -- The Empty Tomb: quiet, personal ---------------------------------------
+  graveWraith: {
+    name: 'grave wraith', glyph: 'w', color: 'mythic',
+    weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130, xp: 38,
+  },
+  pilgrimHusk: {
+    name: 'pilgrim husk', glyph: 'P', color: 'monsterWeak',
+    weight: 9, maxHp: 22, power: 8, defense: 2, speed: 100, xp: 40,
+  },
+  sepulchreWorm: {
+    name: 'sepulchre worm', glyph: 'W', color: 'monsterTough',
+    weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90, xp: 58,
+  },
+  mourner: {
+    name: 'mourner', glyph: 'M', color: 'mythic',
+    weight: 4, minDepth: 10, maxHp: 20, power: 4, defense: 2, speed: 110, xp: 52,
+    ranged: { power: 8, range: 6, reload: 3 },
+  },
+  baudouin: {
+    name: 'Sir Baudouin IX the Unreturned', glyph: '@', color: 'boss',
+    boss: true, bossTrait: 'mirrors',
+    maxHp: 72, power: 11, defense: 5, speed: 100, xp: 400,
+    drops: ['theRelic'],
+    entrance: 'A crusader is sitting against the far wall, and he stands up when he sees you.',
+  },
+};
+
+/** Weighted spawn table for a region's rank-and-file. */
+/**
+ * What this region can field on this floor. `minDepth` keeps the ranged units
+ * off the opening floor, where being shot at by something you have not learned
+ * to close with yet is simply unfair.
+ */
+function monsterTable(region, depth) {
+  return region.monsters
+    .map((key) => ({ key, ...MONSTERS[key] }))
+    .filter((m) => depth >= (m.minDepth ?? 1));
+}
+
+// ==== src/game/bosses.js ===================
+// Each boss does exactly what its lore panel says it does. The panel is written
+// from the mechanic rather than the other way round, so a player who reads it
+// knows what is about to happen and still has to solve it.
+const ROLL_EVERY = 8;         // Herald: turns between names called
+const ROLL_LIMIT = 2;         // and how many will answer in total
+const RISEN_SHARE = 0.4;      // Perpetua: how much of her comes back up
+const CARRY_RANGE = 99;       // Odo: a voice does not have a range
+
+// Baudouin answers your build, but within bounds. Mirroring a crusader's stats
+// outright makes the ending unwinnable at exactly the moment a player has
+// earned it: he would always hit nearly as hard as you while carrying more
+// health than you, and the better your run the worse your odds. He scales, and
+// then he stops.
+const MIRROR_POWER_CAP = 4;
+const MIRROR_DEFENSE_CAP = 2;
+const MIRROR_HP_MULTIPLE = 2;
+const MIRROR_LAG = 5;         // how far behind your build he stays
+
+/**
+ * Spawn-time setup. Only Baudouin needs it: he has been down here through nine
+ * crusades, and what he has been doing is watching how they fight.
+ */
+function prepareBoss(game, boss) {
+  if (boss.bossTrait !== 'mirrors') {
+    if (boss.bossTrait === 'carries') {
+      // A voice that reaches everywhere cannot also hit like a greatsword:
+      // there is nowhere to stand that is safe from it.
+      boss.ranged = { power: Math.max(4, boss.power - 5), range: CARRY_RANGE, reload: 4 };
+    }
+    return;
+  }
+
+  const player = game.player;
+
+  // He fights the way you fight: your weapon, and stats that answer yours.
+  const weapon = player.equipment?.weapon;
+  boss.equipment = { weapon: null, shield: null, armour: null };
+  if (weapon) {
+    const spec = ITEMS[weapon.item.key];
+    if (spec) boss.equipment.weapon = makeItem({ key: weapon.item.key, ...spec }, boss.x, boss.y);
+  }
+
+  // Never weaker than the crusader who found him, never a wall either: he is
+  // one step behind your build, which is close enough to be frightening.
+  const basePower = boss.power;
+  const baseDefense = boss.defense;
+  const baseHp = boss.maxHp;
+
+  boss.power = clamp(effectivePower(player) - MIRROR_LAG, basePower, basePower + MIRROR_POWER_CAP);
+  boss.defense = clamp(effectiveDefense(player) - MIRROR_LAG, baseDefense, baseDefense + MIRROR_DEFENSE_CAP);
+  boss.maxHp = clamp(player.maxHp, baseHp, baseHp * MIRROR_HP_MULTIPLE);
+  boss.hp = boss.maxHp;
+  boss.mirrored = true;
+}
+
+/**
+ * A boss's turn, before its ordinary behaviour. Returns true if the special
+ * consumed the turn.
+ */
+function takeBossTurn(game, boss) {
+  if (boss.bossTrait !== 'callTheRoll') return false;
+
+  boss.rollTimer = (boss.rollTimer ?? 0) + 1;
+  if (boss.rollTimer % ROLL_EVERY !== 0) return false;
+  if ((boss.called ?? 0) >= ROLL_LIMIT) return false;
+
+  const spot = openSpotNear(game, boss);
+  if (!spot) return false;
+
+  const table = monsterTable(game.region, game.level.depth).filter((m) => !m.boss);
+  if (!table.length) return false;
+
+  const answered = makeMonster(game.rng.weighted(table), spot.x, spot.y);
+  answered.ai.hunting = true;
+  game.level.add(answered);
+  boss.called = (boss.called ?? 0) + 1;
+
+  game.log('He reads out a name. Something answers to it.', 'mythic');
+  return true;                                 // reading the roll takes a turn
+}
+
+/**
+ * Death, intercepted. Saint Perpetua declines it once. Returns true if she is
+ * still standing, in which case the caller must not finish her.
+ */
+function bossRises(game, boss) {
+  if (boss.bossTrait !== 'risesAgain' || boss.hasRisen) return false;
+
+  boss.hasRisen = true;
+  boss.hp = Math.max(1, Math.round(boss.maxHp * RISEN_SHARE));
+  boss.defense = Math.max(0, boss.defense - 1);
+  game.log('Saint Perpetua gets up again, without complaint.', 'mythic');
+  game.log('This was the first half of it.', 'textDim');
+  return true;
+}
+
+function clamp(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+function openSpotNear(game, boss) {
+  const offsets = game.rng.shuffle([
+    [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1],
+    [0, -2], [2, 0], [0, 2], [-2, 0],
+  ]);
+  for (const [dx, dy] of offsets) {
+    const x = boss.x + dx;
+    const y = boss.y + dy;
+    if (game.level.isOpen(x, y)) return { x, y };
+  }
+  return null;
+}
+
+/** Used by the panel and the lore card. */
+function bossDistanceTo(boss, player) {
+  return chebyshev(boss.x, boss.y, player.x, player.y);
+}
+
 // ==== src/game/combat.js ===================
 // Defense mitigates a *proportion* of the blow rather than subtracting from it.
 //
@@ -1516,6 +1826,9 @@ function damage(game, target, amount, source = null) {
     game.log(game.theme.strings.death, 'bad');
     return;
   }
+
+  // Some things decline to be finished the first time.
+  if (target.boss && bossRises(game, target)) return;
 
   game.log(capitalize(article(target)) + ' is finished.', 'good');
   if (source?.isPlayer) gainXp(game, source, xpValue(target));
@@ -1663,6 +1976,9 @@ function takeAiTurn(game, monster) {
     wander(game, monster);
     return;
   }
+
+  // A boss's special comes before anything ordinary it might have done.
+  if (monster.boss && takeBossTurn(game, monster)) return;
 
   const profile = rangedProfile(monster);
   if (profile) {
@@ -1845,129 +2161,6 @@ class Memorial {
   }
 }
 
-// ==== src/data/monsters.js =================
-// Monster roster, grouped by the region that fields them. Anything with
-// `boss: true` is placed deliberately rather than rolled, and `drops` is a list
-// of item keys spilled on death.
-//
-//   speed     100 = one turn per player turn; 160 acts half again as often
-//   minDepth  earliest floor it may be rolled on, within its region
-//   ranged    { power, range, reload } -- shoots instead of closing, and backs
-//             away when you get near. Nothing ranged appears on depth 1.
-const MONSTERS = {
-  // -- The Siege Yards: mundane, tired, hungry -------------------------------
-  campDog: {
-    name: 'camp dog', glyph: 'd', color: 'monsterWeak',
-    weight: 12, maxHp: 5, power: 3, defense: 0, speed: 150, xp: 4,
-  },
-  deserter: {
-    name: 'deserter', glyph: 'p', color: 'monsterWeak',
-    weight: 10, maxHp: 8, power: 3, defense: 1, speed: 100, xp: 6,
-  },
-  flagellant: {
-    name: 'flagellant', glyph: 'f', color: 'monsterTough',
-    weight: 7, maxHp: 10, power: 4, defense: 0, speed: 100, xp: 10,
-  },
-  crossbowman: {
-    name: 'deserter with a crossbow', glyph: 'x', color: 'monsterTough',
-    weight: 5, minDepth: 2, maxHp: 7, power: 2, defense: 0, speed: 100, xp: 16,
-    ranged: { power: 4, range: 5, reload: 3 },
-  },
-  herald: {
-    name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
-    boss: true, maxHp: 26, power: 5, defense: 2, speed: 105, xp: 70,
-    drops: ['brassSeal', 'heraldsPollaxe'],
-    entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
-  },
-
-  // -- The Reliquary: patient, dry, well-catalogued --------------------------
-  bonepicker: {
-    name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
-    weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100, xp: 14,
-  },
-  reliquaryMoth: {
-    name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
-    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170, xp: 12,
-  },
-  ossuaryWarden: {
-    name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
-    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80, xp: 24,
-  },
-  boneSlinger: {
-    name: 'bone slinger', glyph: 'b', color: 'monsterTough',
-    weight: 5, minDepth: 4, maxHp: 12, power: 3, defense: 1, speed: 100, xp: 26,
-    ranged: { power: 5, range: 5, reload: 3 },
-  },
-  saintAmbrose: {
-    name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
-    boss: true, maxHp: 44, power: 8, defense: 3, speed: 100, xp: 140,
-    drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
-    entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
-  },
-
-  // -- The Choir: the floor where the game stops being mundane ---------------
-  chorister: {
-    name: 'chorister', glyph: 'c', color: 'monsterWeak',
-    weight: 10, maxHp: 14, power: 5, defense: 1, speed: 110, xp: 24,
-  },
-  censerbearer: {
-    name: 'censerbearer', glyph: 'C', color: 'monsterTough',
-    weight: 7, maxHp: 20, power: 6, defense: 2, speed: 100, xp: 32,
-  },
-  wingedThing: {
-    name: 'winged thing', glyph: 'A', color: 'monsterTough',
-    weight: 5, maxHp: 16, power: 8, defense: 1, speed: 150, xp: 30,
-  },
-  psalmist: {
-    name: 'psalmist', glyph: 'y', color: 'mythic',
-    weight: 4, minDepth: 7, maxHp: 16, power: 3, defense: 1, speed: 110, xp: 36,
-    ranged: { power: 6, range: 6, reload: 3 },
-  },
-  theVoice: {
-    name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
-    boss: true, maxHp: 58, power: 10, defense: 4, speed: 115, xp: 220,
-    drops: ['goldSeal', 'vestmentOfTheChoir', 'psalmOfWard'],
-    entrance: 'The singing stops. This is much worse.',
-  },
-
-  // -- The Empty Tomb: quiet, personal ---------------------------------------
-  graveWraith: {
-    name: 'grave wraith', glyph: 'w', color: 'mythic',
-    weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130, xp: 38,
-  },
-  pilgrimHusk: {
-    name: 'pilgrim husk', glyph: 'P', color: 'monsterWeak',
-    weight: 9, maxHp: 22, power: 8, defense: 2, speed: 100, xp: 40,
-  },
-  sepulchreWorm: {
-    name: 'sepulchre worm', glyph: 'W', color: 'monsterTough',
-    weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90, xp: 58,
-  },
-  mourner: {
-    name: 'mourner', glyph: 'M', color: 'mythic',
-    weight: 4, minDepth: 10, maxHp: 20, power: 4, defense: 2, speed: 110, xp: 52,
-    ranged: { power: 8, range: 6, reload: 3 },
-  },
-  whatYouCameFor: {
-    name: 'What You Came For', glyph: '&', color: 'boss',
-    boss: true, maxHp: 84, power: 12, defense: 5, speed: 110, xp: 400,
-    drops: ['theRelic'],
-    entrance: 'It is smaller than the songs implied. It knows your name, and both of the others.',
-  },
-};
-
-/** Weighted spawn table for a region's rank-and-file. */
-/**
- * What this region can field on this floor. `minDepth` keeps the ranged units
- * off the opening floor, where being shot at by something you have not learned
- * to close with yet is simply unfair.
- */
-function monsterTable(region, depth) {
-  return region.monsters
-    .map((key) => ({ key, ...MONSTERS[key] }))
-    .filter((m) => depth >= (m.minDepth ?? 1));
-}
-
 // ==== src/data/regions.js ==================
 // Four regions, three floors each, a boss holding a seal at the bottom of every
 // one. The seal is the whole progression spine: the way down is a gate, and the
@@ -1991,7 +2184,7 @@ const REGIONS = [
     arrival: 'Shelves of saints, filed by which part of them survived. Someone kept excellent records and then stopped.',
     depths: [4, 6],
     monsters: ['bonepicker', 'reliquaryMoth', 'ossuaryWarden', 'boneSlinger'],
-    boss: 'saintAmbrose',
+    boss: 'saintPerpetua',
     palette: { wall: '#5f5a63', floor: '#847d86' },
   },
   {
@@ -2000,7 +2193,7 @@ const REGIONS = [
     arrival: 'The singing has been going on longer than the building. You try not to learn the words.',
     depths: [7, 9],
     monsters: ['chorister', 'censerbearer', 'wingedThing', 'psalmist'],
-    boss: 'theVoice',
+    boss: 'odoThePrecentor',
     palette: { wall: '#4d5a6b', floor: '#6f8199' },
   },
   {
@@ -2009,7 +2202,7 @@ const REGIONS = [
     arrival: 'It is empty in the way a held breath is empty. You are, at last, expected.',
     depths: [10, 12],
     monsters: ['graveWraith', 'pilgrimHusk', 'sepulchreWorm', 'mourner'],
-    boss: 'whatYouCameFor',
+    boss: 'baudouin',
     final: true,
     palette: { wall: '#3f3a44', floor: '#5c5563' },
   },
@@ -2057,9 +2250,135 @@ const ORDINALS = [
   'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth',
 ];
 
+const ROMAN = [
+  [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+  [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+];
+
+/** A player who names themselves gets a numeral, not a duplicate. */
+function roman(n) {
+  let left = Math.max(1, Math.floor(n));
+  let out = '';
+  for (const [value, numeral] of ROMAN) {
+    while (left >= value) {
+      out += numeral;
+      left -= value;
+    }
+  }
+  return out;
+}
+
 function ordinal(n) {
   return ORDINALS[n - 1] ?? String(n) + 'th';
 }
+
+// ==== src/data/lore.js =====================
+// ---------------------------------------------------------------------------
+// THE STORY OF THE FIRST CRUSADER
+//
+// Told in three chapters, one at each sealed gate, and finished at the bottom.
+//
+// The chapters are deliberately incomplete rather than misleading: everything
+// they say about Sir Baudouin is true, and none of it is the point. The reveal
+// works because the crusade's own records are admiring, and because a reader
+// who is paying attention can feel the shape of what is missing without being
+// told. Nothing before `reveal` may hint at what he became.
+// ---------------------------------------------------------------------------
+const FIRST_CRUSADER = 'Sir Baudouin IX the Unreturned';
+
+const GATE_CHAPTERS = {
+  // Keyed by region, shown the first time that region's gate comes into view.
+  siegeYards: {
+    title: 'The First Descent',
+    lines: [
+      'Sir Baudouin IX went down before the crusade had a number, a banner, or a '
+      + 'reason it could write down. He took a sword, a lamp, and orders that no '
+      + 'longer exist.',
+      'The gate below this one was standing open when he reached it. Nobody has '
+      + 'found it open since.',
+    ],
+  },
+  reliquary: {
+    title: 'What He Sent Up',
+    lines: [
+      'For eleven weeks he sent things up. A map. A list of the dead, in a good '
+      + 'hand. A request for more lamp oil. One line about the singing, which the '
+      + 'Reliquary filed under acoustics.',
+      'Then the notes stopped, and the crusade sent a second man down to find out '
+      + 'why. That was the second crusade. This is the ninth.',
+    ],
+  },
+  choir: {
+    title: 'The Last Note',
+    lines: [
+      'The last thing Sir Baudouin sent up was not written. A chorister carried '
+      + 'it, and delivered it exactly, and would not say it twice:',
+      '"Do not send the others. I am close."',
+      'The crusade read this as encouragement, and sent six more.',
+    ],
+  },
+};
+
+/** Shown when you finally meet him. This is the only place the truth is told. */
+const REVEAL = {
+  title: 'The Ninth Crusader',
+  lines: [
+    'He is still here. Still close. He has been down here longer than the church '
+    + 'above him has stood, and he did not spend that time looking for the Relic.',
+    'He spent it waiting for the second man, and the third, and the eighth. Every '
+    + 'crusade the first one caused. He knows your name — he has known it since '
+    + 'the Siege Yards, because he is the one who wrote it on the roll.',
+    'He is not going to explain. He has been rehearsing this for nine crusades '
+    + 'and he is only going to get one attempt at it.',
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// BOSS LORE
+//
+// One panel each, the first time you lay eyes on them. Every entry states, in
+// fiction, exactly what the thing is about to do to you -- the mechanic is
+// never a surprise, only the fight is.
+// ---------------------------------------------------------------------------
+const BOSS_LORE = {
+  herald: {
+    title: 'the Herald of the Third Wall',
+    lines: [
+      'The Third Wall fell forty years ago and took the register with it. He has '
+      + 'kept the roll from memory ever since: every name that went down, and the '
+      + 'considerably shorter list of names that came back up.',
+      'He reads them aloud when he wants company. They are still down here, and '
+      + 'they still answer to their names.',
+    ],
+    mechanic: 'He calls the roll. Names answer.',
+  },
+  saintPerpetua: {
+    title: 'Saint Perpetua the Patient',
+    lines: [
+      'Martyred once, catalogued twice, and interred in a box that has been opened '
+      + 'more often than it has been closed. Her patience was not a virtue the '
+      + 'Reliquary awarded her. It was an observation.',
+      'She has never once been in a hurry to stay dead.',
+    ],
+    mechanic: 'Killing her is the first half of it.',
+  },
+  odoThePrecentor: {
+    title: 'Odo the Precentor',
+    lines: [
+      'He led the singing here when there was still a service to lead, and he has '
+      + 'not stood down. The Choir follows him because he has never paused long '
+      + 'enough to let them stop.',
+      'Distance is not something that happens to a voice in a room built to carry '
+      + 'one.',
+    ],
+    mechanic: 'He reaches you wherever he can be heard.',
+  },
+  baudouin: {
+    title: FIRST_CRUSADER,
+    lines: REVEAL.lines,
+    mechanic: 'He fights the way you fight. He has had practice.',
+  },
+};
 
 // ==== src/data/theme.js ====================
 // ---------------------------------------------------------------------------
@@ -2078,6 +2397,7 @@ const THEME = {
   tagline: 'descend, unseal, be remembered',
 
   font: '16px "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
+  fontFamily: '"IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
   cell: { w: 14, h: 20 },
   fovRadius: 8,
 
@@ -2156,6 +2476,13 @@ class Game {
     this.state = 'playing';
     this.turn = 0;
     this.echoes = [];
+
+    // Story cards wait in a queue and are shown one at a time. Seen-sets are
+    // per run: the story is told again to the next crusader, because it is the
+    // crusade telling it and the crusade repeats itself.
+    this.storyQueue = [];
+    this.chaptersSeen = new Set();
+    this.loreSeen = new Set();
     this.runRecorded = false;
 
     this.crusaderName = crusaderName(this.rng);
@@ -2261,7 +2588,9 @@ class Game {
     const lastRoom = this.level.rooms[this.level.rooms.length - 1];
     const spot = this.freeSpotInRoom(lastRoom) ?? this.freeSpotInRoom(this.level.rooms[1]);
     if (!spot) return;
-    this.level.add(makeMonster(spec, spot.x, spot.y));
+    const boss = makeMonster(spec, spot.x, spot.y);
+    prepareBoss(this, boss);
+    this.level.add(boss);
     this.bossSpec = spec;
   }
 
@@ -2402,21 +2731,70 @@ class Game {
 
     if (this.player.alive) {
       this.level.updateFov(this.player, this.theme.fovRadius);
+      this.announceGate();
       this.announceBoss();
     } else {
       this.finishRun(this.lastAttacker ?? 'the dungeon');
     }
   }
 
-  /** Bosses get one line, the first time you actually lay eyes on them. */
+  /**
+   * The sealed gate is where the crusade's own account of the first crusader
+   * is told, a chapter at a time. Triggered by seeing the gate rather than by
+   * arriving on the floor, so the story lands where the obstacle is.
+   */
+  announceGate() {
+    if (!this.level.sealed || !this.level.stairs) return;
+    if (this.chaptersSeen.has(this.region.key)) return;
+    if (!this.level.visible.get(this.level.stairs.x, this.level.stairs.y)) return;
+
+    const chapter = GATE_CHAPTERS[this.region.key];
+    if (!chapter) return;
+    this.chaptersSeen.add(this.region.key);
+    this.tellStory({ kind: 'chapter', title: chapter.title, lines: chapter.lines });
+  }
+
+  /** Bosses get their history, the first time you actually lay eyes on them. */
   announceBoss() {
     for (const e of this.level.entities) {
       if (!e.boss || !e.alive || e.announced) continue;
       if (!this.level.visible.get(e.x, e.y)) continue;
       e.announced = true;
-      const spec = MONSTERS[this.region.boss];
+
+      const key = this.region.boss;
+      const spec = MONSTERS[key];
       if (spec?.entrance) this.log(spec.entrance, 'mythic');
+
+      const lore = BOSS_LORE[key];
+      if (lore && !this.loreSeen.has(key)) {
+        this.loreSeen.add(key);
+        this.tellStory({
+          kind: 'boss', title: lore.title, lines: lore.lines, mechanic: lore.mechanic,
+        });
+      }
     }
+  }
+
+  tellStory(card) {
+    this.storyQueue.push(card);
+  }
+
+  /** The card currently waiting to be read, if any. */
+  pendingStory() {
+    return this.storyQueue[0] ?? null;
+  }
+
+  dismissStory() {
+    return this.storyQueue.shift() ?? null;
+  }
+
+  /** A crusader may name themselves. Their revenants keep whatever they chose. */
+  renameCrusader(name) {
+    const cleaned = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!cleaned) return false;
+    this.crusaderName = cleaned;
+    this.player.name = cleaned;
+    return true;
   }
 
   runMonsterTurns() {
@@ -2706,7 +3084,12 @@ function pickUp(game, actor) {
     return false;
   }
 
-  const item = items[0];
+  // Take what matters first. A boss drops its seal onto the same tile as the
+  // rest of its kit, and a seal buried under a crossbow is a progression item
+  // the player has to know to dig for.
+  const item = items.find((e) => e.item.victory)
+    ?? items.find((e) => e.item.seal)
+    ?? items[0];
 
   // Seals and the Relic never occupy pack space. They are the way forward, and
   // a full pack must never be able to strand a crusader on a sealed floor with
@@ -2853,6 +3236,26 @@ class Renderer {
     this.cellH = theme.cell.h;
   }
 
+  /**
+   * Scale the glyph grid to the space available rather than assuming a fixed
+   * cell size. This is what keeps the whole game inside one viewport on any
+   * screen instead of pushing the page into a scrollbar.
+   */
+  fit(availableWidth, availableHeight, cols, rows) {
+    const RATIO = 0.62;                        // a monospace cell is taller than wide
+    let cellH = Math.floor(availableHeight / rows);
+    let cellW = Math.round(cellH * RATIO);
+
+    if (cellW * cols > availableWidth) {
+      cellW = Math.floor(availableWidth / cols);
+      cellH = Math.round(cellW / RATIO);
+    }
+
+    this.cellW = Math.max(4, cellW);
+    this.cellH = Math.max(7, cellH);
+    this.resize(cols, rows);
+  }
+
   resize(widthInCells, heightInCells) {
     const dpr = globalThis.devicePixelRatio || 1;
     const w = widthInCells * this.cellW;
@@ -2871,7 +3274,8 @@ class Renderer {
 
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.font = theme.font;
+    ctx.font = Math.round(this.cellH * 0.78) + 'px '
+      + (theme.fontFamily ?? 'monospace');
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
 
@@ -2959,6 +3363,7 @@ function keyToIntent(event) {
   if (key === 'g' || key === ',') return { type: 'pickup' };
   if (key === 'x') return { type: 'drop' };
   if (key === 'f') return { type: 'fire' };
+  if (key === 'n') return { type: 'rename' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -2973,6 +3378,7 @@ const HELP = [
   ['use / wear', '1-9'],
   ['drop', 'x then 1-9'],
   ['descend', '>'],
+  ['name', 'n'],
   ['restart', 'r'],
 ];
 
@@ -2984,8 +3390,8 @@ class Panel {
     this.theme = theme;
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
-      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader',
-      'level', 'xp-fill', 'xp-text', 'tooltip']) {
+      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'crusader',
+      'level', 'xp-fill', 'xp-text', 'tooltip', 'rename']) {
       this.el[id] = root.querySelector('#' + id);
     }
 
@@ -2994,7 +3400,6 @@ class Panel {
     this.kitSignature = null;
 
     this.el.title.textContent = theme.name;
-    this.el.tagline.textContent = theme.tagline;
     this.el.help.innerHTML = HELP
       .map(([label, keys]) => '<li><span>' + label + '</span><kbd>' + keys + '</kbd></li>')
       .join('');
@@ -3200,39 +3605,132 @@ function escapeHtml(s) {
 // ==== src/main.js ==========================
 // Bootstrap: owns the browser-facing bits and nothing else. All rules live in
 // game/, which is why the whole game is testable under node.
+const NAME_KEY = 'ninth-crusade.name.v1';
+
+const stage = document.getElementById('stage');
 const canvas = document.getElementById('screen');
+const storyEl = document.getElementById('story');
+const storyTitle = document.getElementById('story-title');
+const storyLines = document.getElementById('story-lines');
+const storyMechanic = document.getElementById('story-mechanic');
+const crusaderEl = document.getElementById('crusader');
+const renameButton = document.getElementById('rename');
+const renameInput = document.getElementById('rename-input');
+
 const renderer = new Renderer(canvas, THEME);
 const panel = new Panel(document, THEME);
 
 // One memorial for the whole browser: it outlives every run, which is the point.
 const memorial = new Memorial(browserStorage());
 let game;
-// `x` arms a drop; the next slot key resolves it. Anything else cancels.
-let pendingDrop = false;
+let pendingDrop = false;   // `x` arms a drop; the next slot key resolves it
+let renaming = false;
+
+// -- naming -----------------------------------------------------------------
+
+function storedName() {
+  try {
+    return globalThis.localStorage?.getItem(NAME_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function storeName(name) {
+  // Strip any numeral so the next crusader gets their own rather than stacking.
+  const base = name.replace(/\s+[IVXLCDM]+$/i, '').trim();
+  try {
+    globalThis.localStorage?.setItem(NAME_KEY, base);
+  } catch {
+    // A disabled store costs us the preference, never the run.
+  }
+}
+
+function startRename() {
+  if (renaming || game.state !== 'playing') return;
+  renaming = true;
+  crusaderEl.hidden = true;
+  renameButton.hidden = true;
+  renameInput.hidden = false;
+  renameInput.value = game.crusaderName;
+  renameInput.focus();
+  renameInput.select();
+}
+
+function finishRename(save) {
+  if (!renaming) return;
+  renaming = false;
+  const value = renameInput.value;
+  renameInput.hidden = true;
+  crusaderEl.hidden = false;
+  renameButton.hidden = false;
+  if (save && value.trim()) {
+    game.renameCrusader(value);
+    storeName(value);
+  }
+  redraw();
+}
+
+renameButton.addEventListener('click', startRename);
+renameInput.addEventListener('keydown', (event) => {
+  event.stopPropagation();                     // the input owns the keyboard
+  if (event.key === 'Enter') finishRename(true);
+  if (event.key === 'Escape') finishRename(false);
+});
+renameInput.addEventListener('blur', () => finishRename(true));
+
+// -- the story card ---------------------------------------------------------
+
+function renderStory() {
+  const card = game.pendingStory();
+  if (!card) {
+    storyEl.hidden = true;
+    return;
+  }
+  storyTitle.textContent = card.title;
+  storyLines.replaceChildren(...card.lines.map((line) => {
+    const p = document.createElement('p');
+    p.textContent = line;
+    return p;
+  }));
+  storyMechanic.textContent = card.mechanic ?? '';
+  storyEl.hidden = false;
+}
+
+// -- lifecycle --------------------------------------------------------------
 
 function newGame(seed) {
   pendingDrop = false;
   game = new Game({ seed, theme: THEME, memorial });
-  renderer.resize(game.level.width, game.level.height);
+
+  // A player who has named themselves gets that name, numbered.
+  const base = storedName();
+  if (base) game.renameCrusader(base + ' ' + roman(memorial.runNumber()));
+
+  fitScreen();
+}
+
+/** Scale the map to whatever room the stage has, so the page never scrolls. */
+function fitScreen() {
+  const rect = stage.getBoundingClientRect();
+  renderer.fit(rect.width - 2, rect.height - 2, game.level.width, game.level.height);
   redraw();
 }
 
 function redraw() {
   renderer.draw(game);
   panel.update(game);
+  renderStory();
   document.body.classList.toggle('over', game.state !== 'playing');
 }
 
 function handleIntent(intent) {
   if (intent.type === 'restart') {
-    // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
-
-newGame();
-
-// The canvas measures the font at draw time, so a first paint before IBM Plex
-// Mono arrives would lay the glyph grid out in the fallback face.
-globalThis.document?.fonts?.ready.then(redraw);
+    newGame();
+    return;
+  }
+  if (intent.type === 'rename') {
+    startRename();
     return;
   }
   if (game.state !== 'playing') return;
@@ -3264,17 +3762,36 @@ globalThis.document?.fonts?.ready.then(redraw);
 }
 
 window.addEventListener('keydown', (event) => {
+  if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+  // A story card holds the floor: any key reads on, and none of them is a turn.
+  if (game.pendingStory()) {
+    event.preventDefault();
+    game.dismissStory();
+    redraw();
+    return;
+  }
+
   const intent = keyToIntent(event);
   if (!intent) return;
   event.preventDefault();
   handleIntent(intent);
 });
 
+window.addEventListener('resize', () => fitScreen());
+
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
+globalThis.crusade = {
+  get game() { return game; },
+  memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp,
+};
 
 newGame();
+
+// The canvas measures the font at draw time, so a first paint before IBM Plex
+// Mono arrives would lay the glyph grid out in the fallback face.
+globalThis.document?.fonts?.ready.then(fitScreen);
 </script>
 </body>
 </html>

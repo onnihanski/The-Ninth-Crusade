@@ -156,7 +156,12 @@ export function pickUp(game, actor) {
     return false;
   }
 
-  const item = items[0];
+  // Take what matters first. A boss drops its seal onto the same tile as the
+  // rest of its kit, and a seal buried under a crossbow is a progression item
+  // the player has to know to dig for.
+  const item = items.find((e) => e.item.victory)
+    ?? items.find((e) => e.item.seal)
+    ?? items[0];
 
   // Seals and the Relic never occupy pack space. They are the way forward, and
   // a full pack must never be able to strand a crusader on a sealed floor with
