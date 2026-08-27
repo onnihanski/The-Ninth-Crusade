@@ -1,45 +1,54 @@
 // ---------------------------------------------------------------------------
 // THE THEME SEAM
 //
-// Everything that decides what this game *feels* like lives in this file plus
-// monsters.js and items.js. Palette, glyphs, flavour text, the name on the tin.
-// Re-theming the game should never require touching engine/, world/ or game/.
+// Tone: deadpan and mythic at once. The prose is sparse, second-person and
+// slightly too calm about what is happening. The comedy is never a joke told
+// by the game -- it is the gap between the enormity of the crusade and the
+// bureaucratic indifference with which it treats the crusader.
 //
-// What is here now is a deliberately generic placeholder dungeon.
+// Rule of thumb for new strings: say the smallest true thing, and do not
+// explain it.
 // ---------------------------------------------------------------------------
 export const THEME = {
-  name: 'Untitled Roguelike',
-  tagline: 'a placeholder dungeon, awaiting a theme',
+  name: 'The Ninth Crusade',
+  tagline: 'descend, unseal, be remembered',
 
   font: '16px "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
   cell: { w: 14, h: 20 },
   fovRadius: 8,
 
+  // Base palette. Regions tint this -- see data/regions.js.
   colors: {
-    bg: '#0a0c11',
-    wall: '#6b7280',
-    floor: '#8b93a1',
-    stairsDown: '#e9c46a',
+    bg: '#0a0a0c',
+    wall: '#6a6156',
+    floor: '#8b8071',
+    stairsDown: '#e0b25c',
+    sealedGate: '#a8452f',
+    altar: '#cbb27a',
 
-    player: '#f2f4f8',
-    monsterWeak: '#8fbf6f',
-    monsterTough: '#d96b5c',
-    corpse: '#6b4a52',
-    item: '#7fb3d5',
+    player: '#f4efe2',
+    revenant: '#9a7fb8',
+    monsterWeak: '#8f9a6f',
+    monsterTough: '#c25a45',
+    boss: '#e0b25c',
+    corpse: '#5c4340',
+    item: '#7fa8c9',
+    seal: '#e0b25c',
 
-    text: '#c9d0dc',
-    textDim: '#6d7688',
+    text: '#cfc7b8',
+    textDim: '#75705f',
     good: '#8fbf6f',
-    bad: '#d96b5c',
-    notable: '#e9c46a',
+    bad: '#c25a45',
+    notable: '#e0b25c',
+    mythic: '#b49ad6',
   },
 
-  // Flavour strings, kept out of the logic so they can be rewritten wholesale.
   strings: {
-    welcome: 'You descend into the dungeon. Something down here is worth the trip.',
-    descend: (depth) => 'You take the stairs down to depth ' + depth + '.',
-    noStairs: 'There are no stairs here.',
-    death: 'You die. Press [r] to begin again.',
+    death: 'You die. The crusade files you under martyr and continues without you.',
+    noStairs: 'No way down here.',
+    sealed: (boss) => 'The gate is sealed. ' + boss + ' keeps the seal.',
+    unsealed: 'The seal turns. Somewhere below, a gate remembers how to open.',
+    victory: 'You have it. Whatever it is. Press [r] to send the next one down.',
     floorLabel: 'Depth',
   },
 };

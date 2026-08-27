@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Untitled Roguelike</title>
+<title>The Ninth Crusade</title>
 <style>
   :root {
-    --bg: #0a0c11;
-    --panel: #11141c;
-    --line: #222836;
-    --text: #c9d0dc;
-    --dim: #6d7688;
+    --bg: #0a0a0c;
+    --panel: #131218;
+    --line: #2a2731;
+    --text: #cfc7b8;
+    --dim: #75705f;
     --mono: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
@@ -36,7 +36,7 @@
     max-width: 100%;
   }
   aside {
-    width: 260px;
+    width: 286px;
     flex: none;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -72,7 +72,14 @@
   #log li { margin-bottom: 2px; }
   #log em { font-style: normal; color: var(--dim); }
   #seed { color: var(--dim); font-size: 10px; margin-top: 12px; }
-  body.dead #screen { filter: saturate(0.35) brightness(0.75); }
+  #crusader { color: var(--dim); font-size: 10px; margin-top: 8px; letter-spacing: 0.02em; }
+  #region { font-size: 12px; letter-spacing: 0.04em; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 1px 5px; margin: 1px 0;
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  #seals .empty, #statuses:empty { color: var(--dim); font-size: 10px; }
+  body.over #screen { filter: saturate(0.3) brightness(0.7); }
   @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
 </style>
 </head>
@@ -84,10 +91,18 @@
     <p id="tagline"></p>
 
     <section>
+      <div id="region"></div>
       <div id="depth"></div>
       <div id="hp-bar"><div id="hp-fill"></div></div>
       <div id="hp-text"></div>
       <div id="stats"></div>
+      <div id="statuses"></div>
+      <div id="crusader"></div>
+    </section>
+
+    <section>
+      <h2>Seals</h2>
+      <div id="seals"></div>
     </section>
 
     <section>

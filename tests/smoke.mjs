@@ -1,154 +1,272 @@
-// Headless smoke test: drives a full game under node, with no DOM anywhere.
-// Catches the crashes that are painful to find by clicking around in a browser
-// (FOV out of bounds, scheduler deadlocks, AI stepping into walls).
+// Headless test suite: drives full crusades under node, with no DOM anywhere.
+// Catches what is painful to find by clicking around a browser -- scheduler
+// deadlocks, unreachable gates, AI walking into walls, memorial corruption.
 import { Game } from '../src/game/game.js';
-import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { moveOrAttack, wait, pickUp, useItem, descend } from '../src/game/actions.js';
+import { Memorial, memoryStorage } from '../src/game/memorial.js';
+import { makeItem } from '../src/game/entity.js';
+import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { Tiles } from '../src/world/tiles.js';
+import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
+import { ITEMS } from '../src/data/items.js';
 
 let failures = 0;
 function check(label, condition) {
-  if (condition) {
-    console.log('  ok   ' + label);
-  } else {
-    console.log('  FAIL ' + label);
-    failures++;
-  }
+  console.log((condition ? '  ok   ' : '  FAIL ') + label);
+  if (!condition) failures++;
+}
+function section(name) { console.log(name); }
+
+// --- helpers ---------------------------------------------------------------
+function stepToward(g, tx, ty) {
+  const dist = dijkstraMap(g.level.width, g.level.height, [[tx, ty]],
+    (x, y) => g.level.isWalkable(x, y));
+  if (dist[g.player.y * g.level.width + g.player.x] === UNREACHABLE) return false;
+  const move = stepDownhill(dist, g.level.width, g.level.height, g.player.x, g.player.y, g.rng);
+  if (!move) return false;
+  // moveOrAttack swings at anything standing in the way, which is what we want.
+  if (moveOrAttack(g, g.player, move[0], move[1]) && g.state === 'playing') g.playerActed();
+  return true;
 }
 
-// --- determinism -----------------------------------------------------------
-console.log('determinism');
-const a = new Game({ seed: 12345 });
-const b = new Game({ seed: 12345 });
-check('same seed produces identical terrain',
-  JSON.stringify(a.level.tiles.cells.map((t) => t.key)) ===
-  JSON.stringify(b.level.tiles.cells.map((t) => t.key)));
-check('same seed produces identical entity count',
-  a.level.entities.length === b.level.entities.length);
-const c = new Game({ seed: 999 });
-check('different seed produces different terrain',
-  JSON.stringify(a.level.tiles.cells.map((t) => t.key)) !==
-  JSON.stringify(c.level.tiles.cells.map((t) => t.key)));
-
-// --- map invariants --------------------------------------------------------
-console.log('map generation');
-for (let seed = 0; seed < 60; seed++) {
-  const g = new Game({ seed });
-  if (g.level.rooms.length < 3) { check('seed ' + seed + ' has rooms', false); break; }
-  if (!g.level.isWalkable(g.player.x, g.player.y)) { check('seed ' + seed + ' player on floor', false); break; }
-  // Every room centre must be reachable from the player, or the level is a trap.
-  const dist = g.playerDistanceMap();
-  const unreachable = g.level.rooms.filter((r) => dist[r.cy * g.level.width + r.cx] >= 0x3fffffff);
-  if (unreachable.length) { check('seed ' + seed + ' fully connected', false); break; }
-  if (g.level.tiles.get(g.level.stairs.x, g.level.stairs.y) !== Tiles.stairsDown) {
-    check('seed ' + seed + ' has stairs', false); break;
-  }
-}
-check('60 seeds all generate connected, playable levels', failures === 0);
-
-// --- fov -------------------------------------------------------------------
-console.log('field of view');
-const f = new Game({ seed: 7 });
-check('player can see their own tile', f.level.visible.get(f.player.x, f.player.y) === true);
-check('fov marks tiles explored', f.level.explored.cells.some(Boolean));
-check('fov does not reveal the whole map',
-  f.level.visible.cells.filter(Boolean).length < f.level.width * f.level.height);
-
-// --- a long random playthrough ---------------------------------------------
-console.log('random playthrough');
-const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
-let deaths = 0;
-let descents = 0;
-
-for (let seed = 0; seed < 25; seed++) {
-  let g = new Game({ seed: seed * 31 + 5 });
-  for (let step = 0; step < 600; step++) {
-    if (g.state === 'dead') { deaths++; g = new Game({ seed: seed * 31 + 6 }); continue; }
-    const roll = g.rng.float();
-    let acted;
-    if (roll < 0.72) {
-      const [dx, dy] = g.rng.pick(DIRS);
-      acted = moveOrAttack(g, g.player, dx, dy);
-    } else if (roll < 0.80) {
-      acted = pickUp(g, g.player);
-    } else if (roll < 0.88 && g.player.inventory.length) {
-      acted = useItem(g, g.player, 0);
-    } else if (roll < 0.94) {
-      const before = g.level.depth;
-      acted = descend(g);
-      if (g.level.depth > before) descents++;
-    } else {
-      acted = wait();
-    }
-    if (acted) g.playerActed();
-
-    // Invariants that must hold after every single turn.
-    if (g.player.hp > g.player.maxHp) { check('hp never exceeds max', false); break; }
-    if (!g.level.isWalkable(g.player.x, g.player.y)) { check('player never inside a wall', false); break; }
-    for (const e of g.level.entities) {
-      if (e.ai && e.alive && !g.level.isWalkable(e.x, e.y)) { check('monsters never inside walls', false); break; }
-    }
-  }
-}
-check('25 random playthroughs x 600 turns, no crash or deadlock', true);
-check('combat is lethal enough to kill the player sometimes (' + deaths + ' deaths)', deaths > 0);
-
-// --- descending, deliberately ----------------------------------------------
-// The random walker above almost never steps on the stairs by chance, so drive
-// the player to them on purpose. This also covers state that must survive a
-// level change: inventory, HP, and the player's identity as an entity.
-console.log('descending');
-
-function walkToStairs(g, budget = 4000) {
-  for (let step = 0; step < budget; step++) {
-    if (g.state === 'dead') return false;
-    if (g.player.x === g.level.stairs.x && g.player.y === g.level.stairs.y) return true;
-    const dist = dijkstraMap(
-      g.level.width, g.level.height,
-      [[g.level.stairs.x, g.level.stairs.y]],
-      (x, y) => g.level.isWalkable(x, y),
-    );
-    if (dist[g.player.y * g.level.width + g.player.x] === UNREACHABLE) return false;
-    const move = stepDownhill(dist, g.level.width, g.level.height, g.player.x, g.player.y, g.rng);
-    if (!move) return false;
-    if (moveOrAttack(g, g.player, move[0], move[1])) g.playerActed();
+function walkTo(g, tx, ty, budget = 500) {
+  for (let i = 0; i < budget; i++) {
+    if (g.state !== 'playing') return false;
+    if (g.player.x === tx && g.player.y === ty) return true;
+    if (!stepToward(g, tx, ty)) return false;
   }
   return false;
 }
 
-const d = new Game({ seed: 4242 });
-d.player.maxHp = 9999;            // survive the trip; we are testing descent, not combat
-d.player.hp = 9999;
-d.player.power = 99;
-
-let reached = 0;
-for (let floor = 1; floor <= 6; floor++) {
-  if (!walkToStairs(d)) break;
-  const depthBefore = d.level.depth;
-  const carried = d.player.inventory.length;
-  if (!descend(d)) break;
-  if (d.level.depth !== depthBefore + 1) break;
-  if (d.player.inventory.length !== carried) break;
-  if (!d.level.entities.includes(d.player)) break;
-  if (!d.level.isWalkable(d.player.x, d.player.y)) break;
-  reached = d.level.depth;
+function killEntity(g, entity, budget = 500) {
+  for (let i = 0; i < budget; i++) {
+    if (!entity.alive) return true;
+    if (g.state !== 'playing') return false;
+    if (!stepToward(g, entity.x, entity.y)) return false;
+  }
+  return !entity.alive;
 }
-check('walked down to depth ' + reached + ' carrying state across floors', reached >= 6);
-check('deeper floors spawn monsters', d.level.entities.some((e) => e.ai));
 
-// --- items -----------------------------------------------------------------
-console.log('items');
-const i = new Game({ seed: 88 });
-i.player.hp = 5;
-const potion = { name: 'healing potion', glyph: '!', color: 'item', use: { kind: 'heal', amount: 8 } };
-i.player.inventory.push({ ...potion, item: { use: potion.use } });
-const consumed = useItem(i, i.player, 0);
-check('using a potion heals', i.player.hp > 5);
-check('using a potion consumes it', consumed && i.player.inventory.length === 0);
-i.player.hp = i.player.maxHp;
-i.player.inventory.push({ ...potion, item: { use: potion.use } });
-useItem(i, i.player, 0);
-check('a potion is not wasted at full health', i.player.inventory.length === 1);
+/** A crusader who cannot lose, for testing structure rather than balance. */
+function invincible(g) {
+  g.player.maxHp = 99999; g.player.hp = 99999; g.player.power = 500; g.player.defense = 99;
+  return g;
+}
+
+// --- determinism -----------------------------------------------------------
+section('determinism');
+{
+  const a = new Game({ seed: 12345, memorial: new Memorial() });
+  const b = new Game({ seed: 12345, memorial: new Memorial() });
+  const terrain = (g) => JSON.stringify(g.level.tiles.cells.map((t) => t.key));
+  check('same seed produces identical terrain', terrain(a) === terrain(b));
+  check('same seed names the same crusader', a.crusaderName === b.crusaderName);
+  check('same seed produces identical entity count',
+    a.level.entities.length === b.level.entities.length);
+  const c = new Game({ seed: 999, memorial: new Memorial() });
+  check('different seed produces different terrain', terrain(a) !== terrain(c));
+}
+
+// --- map invariants --------------------------------------------------------
+section('map generation');
+{
+  let ok = true;
+  for (let seed = 0; seed < 60; seed++) {
+    const g = new Game({ seed, memorial: new Memorial() });
+    const dist = g.playerDistanceMap();
+    if (g.level.rooms.length < 3) { ok = false; break; }
+    if (!g.level.isWalkable(g.player.x, g.player.y)) { ok = false; break; }
+    // Every room centre reachable, or the level is a trap.
+    if (g.level.rooms.some((r) => dist[r.cy * g.level.width + r.cx] >= UNREACHABLE)) { ok = false; break; }
+    if (g.level.tiles.get(g.level.stairs.x, g.level.stairs.y) !== Tiles.stairsDown) { ok = false; break; }
+  }
+  check('60 seeds all generate connected, playable levels', ok);
+}
+
+// --- field of view ---------------------------------------------------------
+section('field of view');
+{
+  const g = new Game({ seed: 7, memorial: new Memorial() });
+  check('player sees their own tile', g.level.visible.get(g.player.x, g.player.y) === true);
+  check('fov marks tiles explored', g.level.explored.cells.some(Boolean));
+  check('fov does not reveal the whole map',
+    g.level.visible.cells.filter(Boolean).length < g.level.width * g.level.height);
+}
+
+// --- regions and gates -----------------------------------------------------
+section('regions and sealed gates');
+{
+  check('four regions covering depths 1..' + MAX_DEPTH,
+    REGIONS.length === 4 && MAX_DEPTH === 12);
+  check('boss depths are the last floor of each region',
+    [3, 6, 9, 12].every(isBossDepth) && ![1, 2, 4, 5, 7, 8, 10, 11].some(isBossDepth));
+
+  const g = invincible(new Game({ seed: 2024, memorial: new Memorial() }));
+  // Jump straight to a boss floor rather than playing three floors to reach it.
+  g.buildLevel(3);
+  check('boss floor has a sealed gate where the stairs would be',
+    g.level.sealed && g.level.tiles.get(g.level.stairs.x, g.level.stairs.y) === Tiles.sealedGate);
+  check('boss floor spawns its boss', g.level.entities.some((e) => e.boss && e.alive));
+
+  walkTo(g, g.level.stairs.x, g.level.stairs.y);
+  check('descending through a sealed gate is refused', descend(g) === false);
+
+  const boss = g.level.entities.find((e) => e.boss);
+  check('boss can be reached and killed', killEntity(g, boss));
+  const seal = g.level.entities.find((e) => e.item?.seal);
+  check('dead boss drops its seal', Boolean(seal));
+
+  walkTo(g, seal.x, seal.y);
+  pickUp(g, g.player);
+  check('taking the seal opens the gate',
+    !g.level.sealed && g.level.tiles.get(g.level.stairs.x, g.level.stairs.y) === Tiles.stairsDown);
+  check('the seal is held, not consumed', g.seals().length === 1);
+
+  walkTo(g, g.level.stairs.x, g.level.stairs.y);
+  check('the gate now leads down', descend(g) === true && g.level.depth === 4);
+  check('crossing into a new region changes the region', g.region.key === 'reliquary');
+}
+
+// --- a full crusade, floor 1 to the Relic -----------------------------------
+section('a full crusade');
+{
+  const memorial = new Memorial(memoryStorage());
+  const g = invincible(new Game({ seed: 31337, memorial }));
+  let reached = 0;
+
+  for (let floor = 1; floor <= MAX_DEPTH; floor++) {
+    if (g.state !== 'playing') break;
+
+    if (isBossDepth(g.level.depth)) {
+      const boss = g.level.entities.find((e) => e.boss && e.alive);
+      if (!boss || !killEntity(g, boss)) break;
+      const loot = g.level.entities.filter((e) => e.item);
+      for (const drop of loot) {
+        if (!drop.item.seal && !drop.item.victory) continue;
+        if (!walkTo(g, drop.x, drop.y)) continue;
+        pickUp(g, g.player);
+      }
+    }
+
+    reached = g.level.depth;
+    if (g.state !== 'playing') break;
+    if (!g.level.stairs) break;                      // final floor: no way down
+    if (!walkTo(g, g.level.stairs.x, g.level.stairs.y)) break;
+    if (!descend(g)) break;
+  }
+
+  check('reached the bottom of the dungeon (depth ' + reached + ')', reached === MAX_DEPTH);
+  check('claiming the Relic wins the run', g.state === 'won');
+  check('all three seals were collected on the way', g.seals().length === 3);
+  check('a won run is written into the memorial',
+    memorial.entries.length === 1 && memorial.entries[0].depth === MAX_DEPTH);
+}
+
+// --- the dungeon remembers -------------------------------------------------
+section('the dungeon remembers');
+{
+  const storage = memoryStorage();
+  const memorial = new Memorial(storage);
+
+  const first = new Game({ seed: 500, memorial });
+  const phialSpec = { key: 'reliquaryPhial', ...ITEMS.reliquaryPhial };
+  first.player.inventory.push(makeItem(phialSpec, 0, 0));
+  first.finishRun('a camp dog');
+
+  check('death is recorded', memorial.entries.length === 1);
+  check('the record keeps what they were carrying',
+    memorial.entries[0].relics.includes('reliquaryPhial'));
+  check('memorial survives a fresh instance over the same storage',
+    new Memorial(storage).entries.length === 1);
+
+  const second = new Game({ seed: 501, memorial });
+  const revenant = second.level.entities.find((e) => e.revenant);
+  check('the dead crusader is waiting on the depth they died', Boolean(revenant));
+  check('the revenant wears their name', revenant.name.includes(first.crusaderName));
+  check('the revenant still holds their relics', revenant.drops.includes('reliquaryPhial'));
+
+  invincible(second);
+  killEntity(second, revenant);
+  const reclaimed = second.level.entities.find((e) => e.item?.key === 'reliquaryPhial');
+  check('killing your predecessor returns their relics', Boolean(reclaimed));
+
+  check('run number counts the crusade about to happen', memorial.runNumber() === 2);
+
+  // Depth 1 must not silt up with dozens of your own corpses.
+  for (let i = 0; i < 20; i++) {
+    memorial.record({ name: 'Pilgrim Test ' + i, depth: 1, relics: [], turn: 1, at: Date.now() });
+  }
+  const crowded = new Game({ seed: 502, memorial });
+  check('revenants per depth are capped',
+    crowded.level.entities.filter((e) => e.revenant).length <= 3);
+}
+
+// --- relics ----------------------------------------------------------------
+section('relics');
+{
+  const g = new Game({ seed: 88, memorial: new Memorial() });
+  const give = (key) => {
+    g.player.inventory.push(makeItem({ key, ...ITEMS[key] }, 0, 0));
+    return g.player.inventory.length - 1;
+  };
+
+  g.player.hp = 5;
+  check('a phial heals and is spent', useItem(g, g.player, give('reliquaryPhial')) && g.player.hp > 5);
+  g.player.hp = g.player.maxHp;
+  give('reliquaryPhial');
+  useItem(g, g.player, 0);
+  check('a phial is not wasted at full health', g.player.inventory.length === 1);
+  g.player.inventory.length = 0;
+
+  useItem(g, g.player, give('psalmOfWard'));
+  check('a ward raises defense while it lasts',
+    g.player.statuses.some((s) => s.kind === 'ward' && s.amount === 3));
+  const before = { x: g.player.x, y: g.player.y };
+  useItem(g, g.player, give('stepOfTheAbsent'));
+  check('blink moves the player somewhere legal',
+    (g.player.x !== before.x || g.player.y !== before.y) && g.level.isWalkable(g.player.x, g.player.y));
+
+  for (let i = 0; i < 20; i++) g.playerActed();
+  check('a ward expires', !g.player.statuses.some((s) => s.kind === 'ward'));
+
+  g.player.inventory.push(makeItem({ key: 'brassSeal', ...ITEMS.brassSeal }, 0, 0));
+  check('a seal cannot be used as a consumable',
+    useItem(g, g.player, g.player.inventory.length - 1) === false);
+}
+
+// --- long random playthroughs ----------------------------------------------
+section('random playthroughs');
+{
+  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+  const memorial = new Memorial(memoryStorage());
+  let deaths = 0;
+  let invariantsHeld = true;
+
+  for (let run = 0; run < 25 && invariantsHeld; run++) {
+    let g = new Game({ seed: run * 31 + 5, memorial });
+    for (let step = 0; step < 500; step++) {
+      if (g.state !== 'playing') { deaths++; g = new Game({ seed: run * 977 + step, memorial }); continue; }
+      const roll = g.rng.float();
+      let acted;
+      if (roll < 0.70) acted = moveOrAttack(g, g.player, ...g.rng.pick(DIRS));
+      else if (roll < 0.79) acted = pickUp(g, g.player);
+      else if (roll < 0.88 && g.player.inventory.length) acted = useItem(g, g.player, 0);
+      else if (roll < 0.94) acted = descend(g);
+      else acted = wait();
+      if (acted && g.state === 'playing') g.playerActed();
+
+      if (g.player.hp > g.player.maxHp) { invariantsHeld = false; break; }
+      if (g.player.alive && !g.level.isWalkable(g.player.x, g.player.y)) { invariantsHeld = false; break; }
+      if (g.level.entities.some((e) => e.ai && e.alive && !g.level.isWalkable(e.x, e.y))) {
+        invariantsHeld = false; break;
+      }
+    }
+  }
+
+  check('25 runs x 500 turns: no crash, no deadlock, no invariant broken', invariantsHeld);
+  check('the dungeon is lethal (' + deaths + ' deaths)', deaths > 0);
+  check('deaths accumulated in the memorial', memorial.entries.length === deaths);
+}
 
 console.log('');
 console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)');

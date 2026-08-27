@@ -1,0 +1,1820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ninth Crusade</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --panel: #131218;
+    --line: #2a2731;
+    --text: #cfc7b8;
+    --dim: #75705f;
+    --mono: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  main { display: flex; gap: 16px; align-items: flex-start; max-width: 100%; }
+  #screen {
+    display: block;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    image-rendering: pixelated;
+    max-width: 100%;
+  }
+  aside {
+    width: 286px;
+    flex: none;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px;
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
+  #tagline { color: var(--dim); font-size: 11px; margin: 3px 0 14px; line-height: 1.4; }
+  section { margin-bottom: 14px; }
+  h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+  }
+  #depth { font-size: 13px; margin-bottom: 6px; }
+  #hp-bar {
+    height: 8px; background: #05070a; border-radius: 2px;
+    overflow: hidden; margin-bottom: 4px;
+  }
+  #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
+  #hp-text, #stats { color: var(--dim); font-size: 11px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  #inventory li, #help li { padding: 2px 0; font-size: 11px; }
+  #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
+  #inventory .empty { color: var(--dim); }
+  kbd {
+    font-family: inherit; font-size: 10px; background: #05070a;
+    border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; color: var(--text);
+  }
+  #log {
+    height: 190px; overflow-y: auto; font-size: 11px; line-height: 1.45;
+    border-top: 1px solid var(--line); padding-top: 8px;
+  }
+  #log li { margin-bottom: 2px; }
+  #log em { font-style: normal; color: var(--dim); }
+  #seed { color: var(--dim); font-size: 10px; margin-top: 12px; }
+  #crusader { color: var(--dim); font-size: 10px; margin-top: 8px; letter-spacing: 0.02em; }
+  #region { font-size: 12px; letter-spacing: 0.04em; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 1px 5px; margin: 1px 0;
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  #seals .empty, #statuses:empty { color: var(--dim); font-size: 10px; }
+  body.over #screen { filter: saturate(0.3) brightness(0.7); }
+  @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="screen"></canvas>
+  <aside>
+    <h1 id="title"></h1>
+    <p id="tagline"></p>
+
+    <section>
+      <div id="region"></div>
+      <div id="depth"></div>
+      <div id="hp-bar"><div id="hp-fill"></div></div>
+      <div id="hp-text"></div>
+      <div id="stats"></div>
+      <div id="statuses"></div>
+      <div id="crusader"></div>
+    </section>
+
+    <section>
+      <h2>Seals</h2>
+      <div id="seals"></div>
+    </section>
+
+    <section>
+      <h2>Pack</h2>
+      <ul id="inventory"></ul>
+    </section>
+
+    <section>
+      <h2>Keys</h2>
+      <ul id="help"></ul>
+    </section>
+
+    <ul id="log"></ul>
+    <div id="seed"></div>
+  </aside>
+</main>
+<script type="module">
+// ==== src/engine/rng.js ====================
+// Seeded PRNG (mulberry32).
+//
+// Determinism is load-bearing in a roguelike: the same seed must produce the
+// same dungeon, the same monster placement, the same damage rolls. That makes
+// bugs reproducible and lets players share seeds. Everything random in this
+// game goes through one RNG instance owned by the Game.
+class RNG {
+  constructor(seed = (Math.random() * 0xffffffff) >>> 0) {
+    this.seed = seed >>> 0;
+    this._state = this.seed;
+  }
+
+  float() {
+    this._state = (this._state + 0x6d2b79f5) >>> 0;
+    let t = this._state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /** Inclusive on both ends. */
+  int(min, max) {
+    return min + Math.floor(this.float() * (max - min + 1));
+  }
+
+  chance(p) {
+    return this.float() < p;
+  }
+
+  pick(arr) {
+    return arr[this.int(0, arr.length - 1)];
+  }
+
+  shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = this.int(0, i);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  /** Pick from [{ weight, ... }]; missing weights count as 1. */
+  weighted(entries) {
+    const total = entries.reduce((sum, e) => sum + (e.weight ?? 1), 0);
+    let roll = this.float() * total;
+    for (const entry of entries) {
+      roll -= entry.weight ?? 1;
+      if (roll <= 0) return entry;
+    }
+    return entries[entries.length - 1];
+  }
+}
+
+// ==== src/engine/grid.js ===================
+// Flat-array 2D grid. Used for tiles, FOV masks and the explored map.
+class Grid {
+  constructor(width, height, fill) {
+    this.width = width;
+    this.height = height;
+    this.cells = new Array(width * height).fill(fill);
+  }
+
+  inBounds(x, y) {
+    return x >= 0 && y >= 0 && x < this.width && y < this.height;
+  }
+
+  get(x, y) {
+    return this.inBounds(x, y) ? this.cells[y * this.width + x] : undefined;
+  }
+
+  set(x, y, value) {
+    if (this.inBounds(x, y)) this.cells[y * this.width + x] = value;
+  }
+
+  fill(value) {
+    this.cells.fill(value);
+    return this;
+  }
+
+  forEach(fn) {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) fn(x, y, this.cells[y * this.width + x]);
+    }
+  }
+}
+
+const DIRS8 = [
+  [0, -1], [1, -1], [1, 0], [1, 1],
+  [0, 1], [-1, 1], [-1, 0], [-1, -1],
+];
+
+function chebyshev(ax, ay, bx, by) {
+  return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+}
+
+// ==== src/engine/dijkstra.js ===============
+// Dijkstra maps: the roguelike community's favourite pathfinding trick.
+//
+// Flood-fill outward from a set of goals once per turn, and every monster on
+// the level can path by simply stepping to its lowest-valued neighbour. One
+// O(cells) pass replaces N separate A* searches, and inverting the map (see
+// `fleeMap`) turns "chase the player" into "run away from the player" for free.
+const UNREACHABLE = 0x3fffffff;
+
+function dijkstraMap(width, height, goals, isPassable) {
+  const dist = new Int32Array(width * height).fill(UNREACHABLE);
+  const queue = [];
+
+  for (const [gx, gy] of goals) {
+    if (gx < 0 || gy < 0 || gx >= width || gy >= height) continue;
+    dist[gy * width + gx] = 0;
+    queue.push(gx, gy);
+  }
+
+  // Uniform step cost, so a plain BFS queue is already in sorted order.
+  for (let head = 0; head < queue.length; head += 2) {
+    const x = queue[head];
+    const y = queue[head + 1];
+    const d = dist[y * width + x];
+
+    for (const [dx, dy] of DIRS8) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const i = ny * width + nx;
+      if (dist[i] <= d + 1) continue;
+      if (!isPassable(nx, ny)) continue;
+      dist[i] = d + 1;
+      queue.push(nx, ny);
+    }
+  }
+
+  return dist;
+}
+
+/** Neighbour with the lowest value, or null if nothing improves on here. */
+function stepDownhill(dist, width, height, x, y, rng) {
+  let best = dist[y * width + x];
+  let candidates = [];
+
+  for (const [dx, dy] of DIRS8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+    const value = dist[ny * width + nx];
+    if (value === UNREACHABLE) continue;
+    if (value < best) {
+      best = value;
+      candidates = [[dx, dy]];
+    } else if (value === best && candidates.length) {
+      candidates.push([dx, dy]);
+    }
+  }
+
+  if (!candidates.length) return null;
+  return rng ? rng.pick(candidates) : candidates[0];
+}
+
+// ==== src/engine/fov.js ====================
+// Recursive shadowcasting field of view (the eight-octant classic).
+//
+// `isOpaque(x, y)` reports whether a cell blocks sight; `markVisible(x, y)` is
+// called once for every cell the origin can see, including the origin itself.
+const OCTANTS = [
+  [1, 0, 0, 1], [0, 1, 1, 0], [0, -1, 1, 0], [-1, 0, 0, 1],
+  [-1, 0, 0, -1], [0, -1, -1, 0], [0, 1, -1, 0], [1, 0, 0, -1],
+];
+
+function computeFov(originX, originY, radius, isOpaque, markVisible) {
+  markVisible(originX, originY);
+  for (const [xx, xy, yx, yy] of OCTANTS) {
+    castLight(originX, originY, radius, 1, 1.0, 0.0, xx, xy, yx, yy, isOpaque, markVisible);
+  }
+}
+
+function castLight(ox, oy, radius, row, startSlope, endSlope, xx, xy, yx, yy, isOpaque, mark) {
+  if (startSlope < endSlope) return;
+  let nextStart = startSlope;
+
+  for (let distance = row; distance <= radius; distance++) {
+    let blocked = false;
+    const dy = -distance;
+
+    for (let dx = -distance; dx <= 0; dx++) {
+      const leftSlope = (dx - 0.5) / (dy + 0.5);
+      const rightSlope = (dx + 0.5) / (dy - 0.5);
+
+      if (startSlope < rightSlope) continue;
+      if (endSlope > leftSlope) break;
+
+      const x = ox + dx * xx + dy * xy;
+      const y = oy + dx * yx + dy * yy;
+
+      if (dx * dx + dy * dy <= radius * radius) mark(x, y);
+
+      if (blocked) {
+        if (isOpaque(x, y)) {
+          nextStart = rightSlope;
+          continue;
+        }
+        blocked = false;
+        startSlope = nextStart;
+      } else if (isOpaque(x, y) && distance < radius) {
+        // Wall found: recurse into the still-open wedge to its left, then
+        // continue scanning this row for the wedge to its right.
+        blocked = true;
+        castLight(ox, oy, radius, distance + 1, startSlope, leftSlope, xx, xy, yx, yy, isOpaque, mark);
+        nextStart = rightSlope;
+      }
+    }
+
+    if (blocked) break;
+  }
+}
+
+// ==== src/world/tiles.js ===================
+const Tiles = {
+  wall: { key: 'wall', glyph: '#', walkable: false, transparent: false },
+  floor: { key: 'floor', glyph: '.', walkable: true, transparent: true },
+  stairsDown: { key: 'stairsDown', glyph: '>', walkable: true, transparent: true },
+  // Stands where the stairs will be, on every boss floor, until a seal turns it.
+  sealedGate: { key: 'sealedGate', glyph: '=', walkable: true, transparent: true },
+};
+
+// ==== src/world/mapgen.js ==================
+// Rooms-and-corridors generation: the Rogue original, and still the clearest
+// starting point. Try to place N non-overlapping rectangles, then join each new
+// room to the previous one with an L-shaped tunnel. Guaranteed connected,
+// because every room is linked to the one before it.
+//
+// This is the obvious place to grow later: cellular-automata caves, BSP,
+// prefab vaults, a cave/room mix chosen by depth.
+function generateLevel(rng, width, height, options = {}) {
+  const {
+    maxRooms = 26,
+    minRoomSize = 5,
+    maxRoomSize = 11,
+  } = options;
+
+  const tiles = new Grid(width, height, Tiles.wall);
+  const rooms = [];
+
+  for (let attempt = 0; attempt < maxRooms * 3 && rooms.length < maxRooms; attempt++) {
+    const w = rng.int(minRoomSize, maxRoomSize);
+    const h = rng.int(minRoomSize - 1, maxRoomSize - 2);
+    const x = rng.int(1, width - w - 2);
+    const y = rng.int(1, height - h - 2);
+    const room = { x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1) };
+
+    // One cell of padding keeps rooms from fusing into blobs.
+    if (rooms.some((other) => overlaps(room, other, 1))) continue;
+
+    carveRoom(tiles, room);
+    if (rooms.length > 0) {
+      const prev = rooms[rooms.length - 1];
+      carveCorridor(tiles, prev.cx, prev.cy, room.cx, room.cy, rng);
+    }
+    rooms.push(room);
+  }
+
+  const last = rooms[rooms.length - 1];
+  tiles.set(last.cx, last.cy, Tiles.stairsDown);
+
+  return { tiles, rooms, stairs: { x: last.cx, y: last.cy } };
+}
+
+function overlaps(a, b, pad) {
+  return (
+    a.x - pad < b.x + b.w && a.x + a.w + pad > b.x &&
+    a.y - pad < b.y + b.h && a.y + a.h + pad > b.y
+  );
+}
+
+function carveRoom(tiles, room) {
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) tiles.set(x, y, Tiles.floor);
+  }
+}
+
+function carveCorridor(tiles, x1, y1, x2, y2, rng) {
+  if (rng.chance(0.5)) {
+    carveH(tiles, x1, x2, y1);
+    carveV(tiles, y1, y2, x2);
+  } else {
+    carveV(tiles, y1, y2, x1);
+    carveH(tiles, x1, x2, y2);
+  }
+}
+
+function carveH(tiles, x1, x2, y) {
+  for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+    if (tiles.get(x, y) === Tiles.wall) tiles.set(x, y, Tiles.floor);
+  }
+}
+
+function carveV(tiles, y1, y2, x) {
+  for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
+    if (tiles.get(x, y) === Tiles.wall) tiles.set(x, y, Tiles.floor);
+  }
+}
+
+// ==== src/world/level.js ===================
+// One dungeon floor: terrain, what the player has seen, and everything in it.
+class Level {
+  constructor(rng, width, height, depth) {
+    const { tiles, rooms, stairs } = generateLevel(rng, width, height);
+    this.width = width;
+    this.height = height;
+    this.depth = depth;
+    this.tiles = tiles;
+    this.rooms = rooms;
+    this.stairs = stairs;
+    this.entities = [];
+
+    this.visible = new Grid(width, height, false);
+    this.explored = new Grid(width, height, false);
+  }
+
+  isWalkable(x, y) {
+    return (this.tiles.get(x, y) ?? Tiles.wall).walkable;
+  }
+
+  isOpaque(x, y) {
+    return !(this.tiles.get(x, y) ?? Tiles.wall).transparent;
+  }
+
+  /** Walkable and unoccupied by anything that blocks movement. */
+  isOpen(x, y) {
+    return this.isWalkable(x, y) && !this.blockerAt(x, y);
+  }
+
+  blockerAt(x, y) {
+    return this.entities.find((e) => e.blocks && e.alive && e.x === x && e.y === y) ?? null;
+  }
+
+  itemsAt(x, y) {
+    return this.entities.filter((e) => e.item && e.x === x && e.y === y);
+  }
+
+  actors() {
+    return this.entities.filter((e) => e.alive && e.speed > 0);
+  }
+
+  add(entity) {
+    this.entities.push(entity);
+    return entity;
+  }
+
+  remove(entity) {
+    const i = this.entities.indexOf(entity);
+    if (i >= 0) this.entities.splice(i, 1);
+  }
+
+  /** Recompute what the viewer can see; anything seen stays on the map. */
+  updateFov(viewer, radius) {
+    this.visible.fill(false);
+    computeFov(
+      viewer.x, viewer.y, radius,
+      (x, y) => this.isOpaque(x, y),
+      (x, y) => {
+        if (!this.visible.inBounds(x, y)) return;
+        this.visible.set(x, y, true);
+        this.explored.set(x, y, true);
+      },
+    );
+  }
+}
+
+// ==== src/game/entity.js ===================
+// Entities are plain bags of optional fields rather than a class hierarchy.
+// A thing is a monster because it has `ai`, an item because it has `item`, a
+// combatant because it has `maxHp`. Adding a new kind of thing means adding a
+// field, never editing a base class.
+let nextId = 1;
+
+function makeEntity(props = {}) {
+  return {
+    id: nextId++,
+    x: 0, y: 0,
+    glyph: '?',
+    color: 'text',
+    name: 'something',
+    blocks: false,
+    alive: true,
+    speed: 0,     // 0 = never takes turns (items, corpses)
+    energy: 0,
+    statuses: [],
+    ...props,
+  };
+}
+
+function makePlayer(x, y, name) {
+  return makeEntity({
+    x, y,
+    glyph: '@', color: 'player', name: name ?? 'you',
+    blocks: true, speed: 100,
+    maxHp: 22, hp: 22, power: 5, defense: 1,
+    inventory: [],
+    isPlayer: true,
+  });
+}
+
+function makeMonster(spec, x, y) {
+  return makeEntity({
+    x, y,
+    glyph: spec.glyph, color: spec.color, name: spec.name,
+    blocks: true, speed: spec.speed,
+    maxHp: spec.maxHp, hp: spec.maxHp,
+    power: spec.power, defense: spec.defense,
+    boss: spec.boss ?? false,
+    drops: spec.drops ? [...spec.drops] : [],
+    ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
+  });
+}
+
+/**
+ * A dead crusader from a previous run. Stats scale with how far they got --
+ * a crusader who died on depth 10 is a genuinely dangerous thing to meet.
+ */
+function makeRevenant(entry, x, y) {
+  const depth = entry.depth;
+  return makeEntity({
+    x, y,
+    glyph: '@', color: 'revenant',
+    name: 'the revenant of ' + entry.name,
+    blocks: true, speed: 100,
+    maxHp: 14 + depth * 3, hp: 14 + depth * 3,
+    power: 4 + Math.floor(depth / 2),
+    defense: 1 + Math.floor(depth / 4),
+    drops: [...(entry.relics ?? [])],
+    revenant: true,
+    ai: { hunting: false },
+  });
+}
+
+function makeItem(spec, x, y) {
+  return makeEntity({
+    x, y,
+    glyph: spec.glyph, color: spec.color, name: spec.name,
+    item: { key: spec.key, use: spec.use, seal: spec.seal, victory: spec.victory, flavour: spec.flavour },
+  });
+}
+
+// ==== src/game/status.js ===================
+// Timed statuses. Deliberately tiny: a list of {kind, turns, amount} that ticks
+// down once per turn of the actor carrying it. Everything that reads a stat
+// goes through the accessors here rather than reading `.defense` directly, so
+// new statuses never require hunting down call sites.
+function addStatus(game, entity, status) {
+  entity.statuses ??= [];
+  const existing = entity.statuses.find((s) => s.kind === status.kind);
+  if (existing) {
+    // Refresh rather than stack -- stacking wards is a balance hole.
+    existing.turns = Math.max(existing.turns, status.turns);
+    existing.amount = Math.max(existing.amount, status.amount);
+    return;
+  }
+  entity.statuses.push({ ...status });
+}
+
+function tickStatuses(game, entity) {
+  if (!entity.statuses?.length) return;
+  for (const status of entity.statuses) status.turns--;
+
+  const expired = entity.statuses.filter((s) => s.turns <= 0);
+  entity.statuses = entity.statuses.filter((s) => s.turns > 0);
+
+  if (entity.isPlayer) {
+    for (const status of expired) {
+      if (status.kind === 'ward') game.log('The psalm runs out of breath.', 'textDim');
+    }
+  }
+}
+
+function statusAmount(entity, kind) {
+  return entity.statuses?.find((s) => s.kind === kind)?.amount ?? 0;
+}
+
+function effectiveDefense(entity) {
+  return entity.defense + statusAmount(entity, 'ward');
+}
+
+// ==== src/game/combat.js ===================
+// Deliberately simple: power vs defense with a small random spread. The first
+// thing worth deepening once the content settles -- to-hit rolls, damage types,
+// resistances all slot in here without touching anything else.
+function attack(game, attacker, defender) {
+  if (defender.isPlayer) game.lastAttacker = article(attacker);
+  const roll = game.rng.int(attacker.power - 1, attacker.power + 1);
+  const dealt = Math.max(0, roll - effectiveDefense(defender));
+  const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
+  const object = defender.isPlayer ? 'you' : article(defender);
+  const verb = attacker.isPlayer ? 'hit' : 'hits';
+
+  if (dealt <= 0) {
+    game.log(subject + ' ' + verb + ' ' + object + ', to no effect.', 'textDim');
+    return;
+  }
+
+  game.log(
+    subject + ' ' + verb + ' ' + object + ' for ' + dealt + '.',
+    attacker.isPlayer ? 'text' : 'bad',
+  );
+  damage(game, defender, dealt);
+}
+
+function damage(game, target, amount) {
+  target.hp -= amount;
+  if (target.hp > 0) return;
+
+  if (target.isPlayer) {
+    target.alive = false;
+    game.state = 'dead';
+    game.log(game.theme.strings.death, 'bad');
+    return;
+  }
+
+  game.log(capitalize(article(target)) + ' is finished.', 'good');
+  game.spillDrops(target);
+
+  target.alive = false;
+  target.blocks = false;
+  target.speed = 0;
+  target.ai = null;
+  target.glyph = '%';
+  target.color = 'corpse';
+  target.name = 'the remains of ' + bareName(target);
+
+  if (target.boss) game.onBossDefeated(target);
+}
+
+/** Proper nouns (bosses, revenants) do not take an article. */
+function article(entity) {
+  return entity.properName || /^(the|What|Saint)\b/.test(entity.name)
+    ? entity.name
+    : 'the ' + entity.name;
+}
+
+function bareName(entity) {
+  return entity.name.replace(/^the /, '');
+}
+
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ==== src/game/ai.js =======================
+// Bare-bones hostile AI, and the most rewarding file in the project to grow:
+// ranged attackers, pack tactics, fleeing at low HP, monsters that open doors.
+//
+// The "can I see the player" test reuses the player's own FOV. That is a real
+// simplification (sight is symmetric here), and worth revisiting if monsters
+// ever get their own senses.
+function takeAiTurn(game, monster) {
+  const level = game.level;
+  const player = game.player;
+  const canSeePlayer = level.visible.get(monster.x, monster.y);
+
+  if (canSeePlayer) monster.ai.hunting = true;
+  if (!monster.ai.hunting) {
+    wander(game, monster);
+    return;
+  }
+
+  if (chebyshev(monster.x, monster.y, player.x, player.y) <= 1) {
+    attack(game, monster, player);
+    return;
+  }
+
+  const dist = game.playerDistanceMap();
+  if (dist[monster.y * level.width + monster.x] === UNREACHABLE) {
+    monster.ai.hunting = false;
+    return;
+  }
+
+  const step = stepDownhill(dist, level.width, level.height, monster.x, monster.y, game.rng);
+  if (!step) return;
+  const [dx, dy] = step;
+  if (level.isOpen(monster.x + dx, monster.y + dy)) {
+    monster.x += dx;
+    monster.y += dy;
+  }
+}
+
+function wander(game, monster) {
+  if (!game.rng.chance(0.25)) return;
+  const [dx, dy] = game.rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]]);
+  if (game.level.isOpen(monster.x + dx, monster.y + dy)) {
+    monster.x += dx;
+    monster.y += dy;
+  }
+}
+
+// ==== src/game/memorial.js =================
+// ---------------------------------------------------------------------------
+// THE DUNGEON REMEMBERS
+//
+// Every crusader who dies is written down. On later runs they are still where
+// they fell -- as a revenant wearing their own name, holding whatever they were
+// carrying when they died. Kill them and you get your old relics back.
+//
+// Storage is injected rather than reached for, so the browser uses
+// localStorage and the headless tests use a plain object.
+// ---------------------------------------------------------------------------
+const STORAGE_KEY = 'ninth-crusade.memorial.v1';
+const MAX_ENTRIES = 60;
+const MAX_REVENANTS_PER_DEPTH = 3;
+
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => map.set(k, v),
+    removeItem: (k) => map.delete(k),
+  };
+}
+
+/** localStorage if it is usable, an in-memory stand-in if it is not. */
+function browserStorage() {
+  try {
+    const probe = '__probe__';
+    globalThis.localStorage.setItem(probe, '1');
+    globalThis.localStorage.removeItem(probe);
+    return globalThis.localStorage;
+  } catch {
+    return memoryStorage();
+  }
+}
+
+class Memorial {
+  constructor(storage = memoryStorage()) {
+    this.storage = storage;
+    this.entries = this.load();
+  }
+
+  load() {
+    try {
+      const raw = this.storage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  save() {
+    try {
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.entries));
+    } catch {
+      // A full or disabled store costs us persistence, never the run in progress.
+    }
+  }
+
+  /** How many crusades have been sent down, counting the one starting now. */
+  runNumber() {
+    return this.entries.length + 1;
+  }
+
+  record(entry) {
+    this.entries.push(entry);
+    if (this.entries.length > MAX_ENTRIES) {
+      this.entries = this.entries.slice(-MAX_ENTRIES);
+    }
+    this.save();
+  }
+
+  /**
+   * Who to meet again at this depth. Most recent first and capped, so depth 1
+   * does not eventually become a wall of your own corpses.
+   */
+  atDepth(depth) {
+    return this.entries
+      .filter((e) => e.depth === depth)
+      .slice(-MAX_REVENANTS_PER_DEPTH);
+  }
+
+  clear() {
+    this.entries = [];
+    this.storage.removeItem(STORAGE_KEY);
+  }
+}
+
+// ==== src/data/monsters.js =================
+// Monster roster, grouped by the region that fields them. Anything with
+// `boss: true` is placed deliberately rather than rolled, and `drops` is a list
+// of item keys spilled on death.
+//
+//   speed   100 = one turn per player turn; 160 acts half again as often
+const MONSTERS = {
+  // -- The Siege Yards: mundane, tired, hungry -------------------------------
+  campDog: {
+    name: 'camp dog', glyph: 'd', color: 'monsterWeak',
+    weight: 12, maxHp: 5, power: 3, defense: 0, speed: 150,
+  },
+  deserter: {
+    name: 'deserter', glyph: 'p', color: 'monsterWeak',
+    weight: 10, maxHp: 8, power: 3, defense: 1, speed: 100,
+  },
+  flagellant: {
+    name: 'flagellant', glyph: 'f', color: 'monsterTough',
+    weight: 7, maxHp: 10, power: 5, defense: 0, speed: 100,
+  },
+  herald: {
+    name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
+    boss: true, maxHp: 32, power: 6, defense: 2, speed: 110,
+    drops: ['brassSeal'],
+    entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
+  },
+
+  // -- The Reliquary: patient, dry, well-catalogued --------------------------
+  bonepicker: {
+    name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
+    weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100,
+  },
+  reliquaryMoth: {
+    name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
+    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170,
+  },
+  ossuaryWarden: {
+    name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
+    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80,
+  },
+  saintAmbrose: {
+    name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
+    boss: true, maxHp: 48, power: 8, defense: 3, speed: 100,
+    drops: ['silverSeal', 'reliquaryPhial'],
+    entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
+  },
+
+  // -- The Choir: the floor where the game stops being mundane ---------------
+  chorister: {
+    name: 'chorister', glyph: 'c', color: 'monsterWeak',
+    weight: 10, maxHp: 14, power: 6, defense: 1, speed: 110,
+  },
+  censerbearer: {
+    name: 'censerbearer', glyph: 'C', color: 'monsterTough',
+    weight: 7, maxHp: 20, power: 7, defense: 2, speed: 100,
+  },
+  wingedThing: {
+    name: 'winged thing', glyph: 'A', color: 'monsterTough',
+    weight: 5, maxHp: 16, power: 9, defense: 1, speed: 150,
+  },
+  theVoice: {
+    name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
+    boss: true, maxHp: 62, power: 10, defense: 4, speed: 120,
+    drops: ['goldSeal', 'psalmOfWard'],
+    entrance: 'The singing stops. This is much worse.',
+  },
+
+  // -- The Empty Tomb: quiet, personal ---------------------------------------
+  aDoubt: {
+    name: 'a doubt', glyph: 'g', color: 'mythic',
+    weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130,
+  },
+  pilgrimHusk: {
+    name: 'pilgrim husk', glyph: 'P', color: 'monsterWeak',
+    weight: 9, maxHp: 22, power: 8, defense: 2, speed: 100,
+  },
+  sepulchreWorm: {
+    name: 'sepulchre worm', glyph: 'W', color: 'monsterTough',
+    weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90,
+  },
+  whatYouCameFor: {
+    name: 'What You Came For', glyph: '&', color: 'boss',
+    boss: true, maxHp: 90, power: 12, defense: 5, speed: 110,
+    drops: ['theRelic'],
+    entrance: 'It is smaller than the songs implied. It knows your name, and both of the others.',
+  },
+};
+
+/** Weighted spawn table for a region's rank-and-file. */
+function monsterTable(region) {
+  return region.monsters.map((key) => ({ key, ...MONSTERS[key] }));
+}
+
+// ==== src/data/items.js ====================
+// Relics are the game's magic: no spellbook, no mana, just consumable objects
+// with one clear verb each. `use` is a tagged effect resolved in game/effects.js.
+const ITEMS = {
+  reliquaryPhial: {
+    name: 'reliquary phial', glyph: '!', color: 'item',
+    weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
+    flavour: 'Contents: mostly saint.',
+  },
+  sparkOfTheChoir: {
+    name: 'spark of the choir', glyph: '?', color: 'item',
+    weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
+    flavour: 'One held note, released.',
+  },
+  psalmOfWard: {
+    name: 'psalm of ward', glyph: '?', color: 'item',
+    weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
+    flavour: 'Sung badly, it still works.',
+  },
+  stepOfTheAbsent: {
+    name: 'step of the absent', glyph: '?', color: 'item',
+    weight: 6, minDepth: 4, use: { kind: 'blink' },
+    flavour: 'The floor forgets you were standing on it.',
+  },
+
+  // -- Seals: not usable, only carried. Their whole function is opening gates.
+  brassSeal: {
+    name: 'brass seal', glyph: '=', color: 'seal', seal: 'siegeYards',
+    flavour: 'Stamped with a wall that no longer exists.',
+  },
+  silverSeal: {
+    name: 'silver seal', glyph: '=', color: 'seal', seal: 'reliquary',
+    flavour: 'Warm, which is not a thing silver does.',
+  },
+  goldSeal: {
+    name: 'gold seal', glyph: '=', color: 'seal', seal: 'choir',
+    flavour: 'It hums the note you have been trying to forget.',
+  },
+  theRelic: {
+    name: 'the Relic', glyph: '*', color: 'notable', victory: true,
+    flavour: 'You came a long way for this.',
+  },
+};
+
+/** Only floor-spawnable relics -- seals are placed by bosses, never rolled. */
+function itemTable(depth) {
+  return Object.entries(ITEMS)
+    .filter(([, item]) => item.weight && depth >= item.minDepth)
+    .map(([key, item]) => ({ key, ...item }));
+}
+
+// ==== src/data/regions.js ==================
+// Four regions, three floors each, a boss holding a seal at the bottom of every
+// one. The seal is the whole progression spine: the way down is a gate, and the
+// gate opens for exactly one thing.
+//
+// Each region retints the palette and swaps the monster pool, so descending
+// feels like arriving somewhere rather than incrementing a counter.
+const REGIONS = [
+  {
+    key: 'siegeYards',
+    name: 'The Siege Yards',
+    arrival: 'Mud, and the smell of other people\'s campfires. The war was here recently and did not enjoy itself.',
+    depths: [1, 3],
+    monsters: ['campDog', 'deserter', 'flagellant'],
+    boss: 'herald',
+    palette: { wall: '#6a6156', floor: '#8b8071' },
+  },
+  {
+    key: 'reliquary',
+    name: 'The Reliquary',
+    arrival: 'Shelves of saints, filed by which part of them survived. Someone kept excellent records and then stopped.',
+    depths: [4, 6],
+    monsters: ['bonepicker', 'reliquaryMoth', 'ossuaryWarden'],
+    boss: 'saintAmbrose',
+    palette: { wall: '#5f5a63', floor: '#847d86' },
+  },
+  {
+    key: 'choir',
+    name: 'The Choir',
+    arrival: 'The singing has been going on longer than the building. You try not to learn the words.',
+    depths: [7, 9],
+    monsters: ['chorister', 'censerbearer', 'wingedThing'],
+    boss: 'theVoice',
+    palette: { wall: '#4d5a6b', floor: '#6f8199' },
+  },
+  {
+    key: 'emptyTomb',
+    name: 'The Empty Tomb',
+    arrival: 'It is empty in the way a held breath is empty. You are, at last, expected.',
+    depths: [10, 12],
+    monsters: ['aDoubt', 'pilgrimHusk', 'sepulchreWorm'],
+    boss: 'whatYouCameFor',
+    final: true,
+    palette: { wall: '#3f3a44', floor: '#5c5563' },
+  },
+];
+
+function regionForDepth(depth) {
+  return REGIONS.find((r) => depth >= r.depths[0] && depth <= r.depths[1])
+    ?? REGIONS[REGIONS.length - 1];
+}
+
+function isBossDepth(depth) {
+  const region = regionForDepth(depth);
+  return depth === region.depths[1];
+}
+
+const MAX_DEPTH = REGIONS[REGIONS.length - 1].depths[1];
+
+// ==== src/data/names.js ====================
+// Crusader names. Generated from the run seed, so a given run always produces
+// the same crusader -- which matters once that crusader is dead and the next
+// run has to meet them again by name.
+const TITLES = ['Brother', 'Sister', 'Pilgrim', 'Knight', 'Adept', 'Sibling'];
+
+const NAMES = [
+  'Aldric', 'Bertran', 'Casimir', 'Domitia', 'Eudoxia', 'Fulk', 'Gisela',
+  'Hedwig', 'Ives', 'Jocelyn', 'Konrad', 'Leofric', 'Mahaut', 'Norbert',
+  'Odilia', 'Peregrine', 'Quenilda', 'Raimund', 'Sibylla', 'Tancred',
+  'Ulric', 'Verena', 'Waleran', 'Ysabeau',
+];
+
+const EPITHETS = [
+  'of the Third Wall', 'the Unshriven', 'of Little Faith', 'the Punctual',
+  'who was warned', 'of the Wet March', 'the Twice-Blessed', 'the Reluctant',
+  'of no fixed parish', 'the Well-Meaning', 'who read the map wrong',
+  'the Last to Volunteer', 'of the Broken Censer', 'the Merely Devout',
+];
+
+function crusaderName(rng) {
+  return rng.pick(TITLES) + ' ' + rng.pick(NAMES) + ' ' + rng.pick(EPITHETS);
+}
+
+const ORDINALS = [
+  'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth',
+  'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth',
+  'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth',
+];
+
+function ordinal(n) {
+  return ORDINALS[n - 1] ?? String(n) + 'th';
+}
+
+// ==== src/data/theme.js ====================
+// ---------------------------------------------------------------------------
+// THE THEME SEAM
+//
+// Tone: deadpan and mythic at once. The prose is sparse, second-person and
+// slightly too calm about what is happening. The comedy is never a joke told
+// by the game -- it is the gap between the enormity of the crusade and the
+// bureaucratic indifference with which it treats the crusader.
+//
+// Rule of thumb for new strings: say the smallest true thing, and do not
+// explain it.
+// ---------------------------------------------------------------------------
+const THEME = {
+  name: 'The Ninth Crusade',
+  tagline: 'descend, unseal, be remembered',
+
+  font: '16px "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
+  cell: { w: 14, h: 20 },
+  fovRadius: 8,
+
+  // Base palette. Regions tint this -- see data/regions.js.
+  colors: {
+    bg: '#0a0a0c',
+    wall: '#6a6156',
+    floor: '#8b8071',
+    stairsDown: '#e0b25c',
+    sealedGate: '#a8452f',
+    altar: '#cbb27a',
+
+    player: '#f4efe2',
+    revenant: '#9a7fb8',
+    monsterWeak: '#8f9a6f',
+    monsterTough: '#c25a45',
+    boss: '#e0b25c',
+    corpse: '#5c4340',
+    item: '#7fa8c9',
+    seal: '#e0b25c',
+
+    text: '#cfc7b8',
+    textDim: '#75705f',
+    good: '#8fbf6f',
+    bad: '#c25a45',
+    notable: '#e0b25c',
+    mythic: '#b49ad6',
+  },
+
+  strings: {
+    death: 'You die. The crusade files you under martyr and continues without you.',
+    noStairs: 'No way down here.',
+    sealed: (boss) => 'The gate is sealed. ' + boss + ' keeps the seal.',
+    unsealed: 'The seal turns. Somewhere below, a gate remembers how to open.',
+    victory: 'You have it. Whatever it is. Press [r] to send the next one down.',
+    floorLabel: 'Depth',
+  },
+};
+
+// ==== src/game/game.js =====================
+const ACT_COST = 100;
+const MAX_LOG = 200;
+
+// The Game owns all mutable state and knows nothing about the DOM, which is
+// what lets tests/smoke.mjs drive full crusades headlessly under node.
+class Game {
+  constructor({ seed, width = 72, height = 34, theme = THEME, memorial } = {}) {
+    this.theme = theme;
+    this.width = width;
+    this.height = height;
+    this.seed = seed ?? (Math.random() * 0xffffffff) >>> 0;
+    this.rng = new RNG(this.seed);
+    this.memorial = memorial ?? new Memorial();
+    this.messages = [];
+    this.state = 'playing';
+    this.turn = 0;
+    this.runRecorded = false;
+
+    this.crusaderName = crusaderName(this.rng);
+    this.player = makePlayer(0, 0, this.crusaderName);
+    this.player.energy = ACT_COST; // start ready to act
+
+    this.buildLevel(1);
+
+    const nth = ordinal(this.memorial.runNumber());
+    this.log('You are the ' + nth + ' crusader sent down.', 'notable');
+    if (this.memorial.entries.length) {
+      this.log('The others are still here, in their fashion.', 'mythic');
+    }
+    this.log(this.region.arrival, 'textDim');
+  }
+
+  // -- level lifecycle ------------------------------------------------------
+
+  buildLevel(depth) {
+    this.region = regionForDepth(depth);
+    this.level = new Level(this.rng, this.width, this.height, depth);
+    this.level.region = this.region;
+
+    const start = this.level.rooms[0];
+    this.player.x = start.cx;
+    this.player.y = start.cy;
+    this.level.add(this.player);
+
+    this.setUpGate(depth);
+    this.populate(depth);
+    this.summonTheRemembered(depth);
+
+    this._distCache = null;
+    this.level.updateFov(this.player, this.theme.fovRadius);
+  }
+
+  /**
+   * Boss floors replace their stairs with a sealed gate. The final region has
+   * no way down at all -- the only exit is the thing you came for.
+   */
+  setUpGate(depth) {
+    const { x, y } = this.level.stairs;
+    if (!isBossDepth(depth)) {
+      this.level.sealed = false;
+      return;
+    }
+
+    if (this.region.final) {
+      this.level.tiles.set(x, y, Tiles.floor);
+      this.level.sealed = false;
+      this.level.stairs = null;
+      return;
+    }
+
+    this.level.tiles.set(x, y, Tiles.sealedGate);
+    this.level.sealed = true;
+  }
+
+  nextLevel() {
+    const depth = this.level.depth + 1;
+    const previousRegion = this.region;
+    // Carrying the player entity across means inventory, HP and wards persist.
+    this.level.remove(this.player);
+    this.buildLevel(depth);
+    this.log('You go down. Depth ' + depth + '.', 'notable');
+    if (this.region !== previousRegion) this.log(this.region.arrival, 'mythic');
+  }
+
+  populate(depth) {
+    const boss = isBossDepth(depth);
+    const monsters = monsterTable(this.region);
+    const relics = itemTable(depth);
+    const rooms = this.level.rooms.slice(1); // room 0 is the player's one safe breath
+
+    for (const room of rooms) {
+      const count = boss ? this.rng.int(0, 1) : this.rng.int(0, 2);
+      for (let i = 0; i < count; i++) {
+        const spot = this.freeSpotInRoom(room);
+        if (spot) this.level.add(makeMonster(this.rng.weighted(monsters), spot.x, spot.y));
+      }
+
+      if (this.rng.chance(0.4) && relics.length) {
+        const spot = this.freeSpotInRoom(room);
+        if (spot) this.level.add(makeItem(this.rng.weighted(relics), spot.x, spot.y));
+      }
+    }
+
+    if (boss) this.placeBoss();
+  }
+
+  /** The boss stands on the way out, because of course it does. */
+  placeBoss() {
+    const spec = { key: this.region.boss, ...MONSTERS[this.region.boss] };
+    const lastRoom = this.level.rooms[this.level.rooms.length - 1];
+    const spot = this.freeSpotInRoom(lastRoom) ?? this.freeSpotInRoom(this.level.rooms[1]);
+    if (!spot) return;
+    this.level.add(makeMonster(spec, spot.x, spot.y));
+    this.bossSpec = spec;
+  }
+
+  /**
+   * THE DUNGEON REMEMBERS. Everyone who died on this depth is still down here,
+   * holding what they were holding.
+   */
+  summonTheRemembered(depth) {
+    const dead = this.memorial.atDepth(depth);
+    if (!dead.length) return;
+
+    const rooms = this.level.rooms.slice(1);
+    for (const entry of dead) {
+      const room = this.rng.pick(rooms.length ? rooms : this.level.rooms);
+      const spot = this.freeSpotInRoom(room);
+      if (spot) this.level.add(makeRevenant(entry, spot.x, spot.y));
+    }
+    this.log(
+      dead.length === 1
+        ? 'Someone you used to be is down here.'
+        : dead.length + ' of your predecessors are down here.',
+      'mythic',
+    );
+  }
+
+  freeSpotInRoom(room) {
+    for (let tries = 0; tries < 20; tries++) {
+      const x = this.rng.int(room.x, room.x + room.w - 1);
+      const y = this.rng.int(room.y, room.y + room.h - 1);
+      if (this.level.isOpen(x, y)) return { x, y };
+    }
+    return null;
+  }
+
+  randomOpenTile() {
+    for (let tries = 0; tries < 400; tries++) {
+      const x = this.rng.int(1, this.level.width - 2);
+      const y = this.rng.int(1, this.level.height - 2);
+      if (this.level.isOpen(x, y)) return { x, y };
+    }
+    return null;
+  }
+
+  // -- seals, bosses, endings -----------------------------------------------
+
+  onBossDefeated(boss) {
+    if (boss.entranceShown !== undefined) delete boss.entranceShown;
+    this.log('The way is no longer being argued about.', 'mythic');
+  }
+
+  /** Called when a seal reaches the pack. Opens this floor's gate, if it fits. */
+  tryUnseal(item) {
+    if (!item.item?.seal || !this.level.sealed) return false;
+    if (item.item.seal !== this.region.key) return false;
+
+    const { x, y } = this.level.stairs;
+    this.level.tiles.set(x, y, Tiles.stairsDown);
+    this.level.sealed = false;
+    this.log(this.theme.strings.unsealed, 'notable');
+    return true;
+  }
+
+  claimVictory() {
+    this.state = 'won';
+    this.log(this.theme.strings.victory, 'notable');
+    this.finishRun('walked out');
+  }
+
+  /** Spill a dead thing's drops onto the floor where it fell. */
+  spillDrops(entity) {
+    if (!entity.drops?.length) return;
+    for (const key of entity.drops) {
+      const spec = ITEMS[key];
+      if (!spec) continue;
+      const spot = this.level.isWalkable(entity.x, entity.y)
+        ? { x: entity.x, y: entity.y }
+        : this.randomOpenTile();
+      if (!spot) continue;
+      this.level.add(makeItem({ key, ...spec }, spot.x, spot.y));
+      this.log('It drops ' + spec.name + '.', 'notable');
+    }
+    entity.drops = [];
+  }
+
+  /** Write this crusader into the memorial, once. */
+  finishRun(killedBy) {
+    if (this.runRecorded) return;
+    this.runRecorded = true;
+    this.memorial.record({
+      name: this.crusaderName,
+      depth: this.level.depth,
+      region: this.region.name,
+      killedBy,
+      turn: this.turn,
+      relics: this.player.inventory
+        .filter((i) => i.item?.key && !i.item.victory)
+        .map((i) => i.item.key),
+      at: Date.now(),
+    });
+  }
+
+  // -- turn scheduling ------------------------------------------------------
+
+  /**
+   * Energy-based scheduler. Every actor banks `speed` energy per tick and acts
+   * whenever it can afford ACT_COST, so a camp dog at speed 150 genuinely gets
+   * extra turns rather than being special-cased.
+   */
+  playerActed() {
+    this.player.energy -= ACT_COST;
+    this.turn++;
+    tickStatuses(this, this.player);
+    this.runMonsterTurns();
+    this._distCache = null;
+
+    if (this.player.alive) {
+      this.level.updateFov(this.player, this.theme.fovRadius);
+      this.announceBoss();
+    } else {
+      this.finishRun(this.lastAttacker ?? 'the dungeon');
+    }
+  }
+
+  /** Bosses get one line, the first time you actually lay eyes on them. */
+  announceBoss() {
+    for (const e of this.level.entities) {
+      if (!e.boss || !e.alive || e.announced) continue;
+      if (!this.level.visible.get(e.x, e.y)) continue;
+      e.announced = true;
+      const spec = MONSTERS[this.region.boss];
+      if (spec?.entrance) this.log(spec.entrance, 'mythic');
+    }
+  }
+
+  runMonsterTurns() {
+    // Loop ticks until the player has banked enough energy to act again.
+    while (this.player.alive && this.player.energy < ACT_COST) {
+      for (const actor of this.level.actors()) actor.energy += actor.speed;
+
+      // Snapshot: AI turns can kill entities and mutate the list.
+      for (const actor of [...this.level.entities]) {
+        if (actor === this.player || !actor.ai || !actor.alive) continue;
+        while (actor.energy >= ACT_COST && actor.alive && this.player.alive) {
+          actor.energy -= ACT_COST;
+          tickStatuses(this, actor);
+          takeAiTurn(this, actor);
+        }
+      }
+      this._distCache = null;
+    }
+  }
+
+  /** Distance-to-player map, rebuilt at most once per scheduler tick. */
+  playerDistanceMap() {
+    if (!this._distCache) {
+      this._distCache = dijkstraMap(
+        this.level.width,
+        this.level.height,
+        [[this.player.x, this.player.y]],
+        (x, y) => this.level.isWalkable(x, y),
+      );
+    }
+    return this._distCache;
+  }
+
+  // -- presentation helpers -------------------------------------------------
+
+  /** Theme palette with the current region's tint applied. */
+  palette() {
+    return { ...this.theme.colors, ...(this.region.palette ?? {}) };
+  }
+
+  seals() {
+    return this.player.inventory.filter((i) => i.item?.seal);
+  }
+
+  // -- message log ----------------------------------------------------------
+
+  log(text, color = 'text') {
+    const last = this.messages[this.messages.length - 1];
+    if (last && last.text === text) {
+      last.count++;
+      return;
+    }
+    this.messages.push({ text, color, count: 1 });
+    if (this.messages.length > MAX_LOG) this.messages.shift();
+  }
+}
+
+// ==== src/game/effects.js ==================
+// Relic effects are tagged unions resolved here, so items.js stays pure data.
+// Returns true if the relic was spent.
+function applyEffect(game, user, effect) {
+  switch (effect.kind) {
+    case 'heal': {
+      if (user.hp >= user.maxHp) {
+        game.log('You are as whole as you are going to get.', 'textDim');
+        return false;
+      }
+      const healed = Math.min(effect.amount, user.maxHp - user.hp);
+      user.hp += healed;
+      game.log('Something knits. ' + healed + ' hit points.', 'good');
+      return true;
+    }
+
+    case 'smite': {
+      const target = nearestVisible(game, user, effect.range);
+      if (!target) {
+        game.log('The note goes out unanswered.', 'textDim');
+        return true;
+      }
+      game.log('One held note breaks over the ' + target.name + '.', 'mythic');
+      damage(game, target, effect.amount);
+      return true;
+    }
+
+    case 'ward': {
+      addStatus(game, user, { kind: 'ward', amount: effect.amount, turns: effect.turns });
+      game.log('You are, for the moment, harder to reach.', 'good');
+      return true;
+    }
+
+    case 'blink': {
+      const spot = game.randomOpenTile();
+      if (!spot) {
+        game.log('Nowhere to be instead.', 'textDim');
+        return false;
+      }
+      user.x = spot.x;
+      user.y = spot.y;
+      game.log('The floor forgets you were standing on it.', 'mythic');
+      return true;
+    }
+
+    default:
+      game.log('Nothing happens, at length.', 'textDim');
+      return false;
+  }
+}
+
+function nearestVisible(game, from, range) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const e of game.level.entities) {
+    if (!e.ai || !e.alive) continue;
+    if (!game.level.visible.get(e.x, e.y)) continue;
+    const dist = chebyshev(from.x, from.y, e.x, e.y);
+    if (dist <= range && dist < bestDist) {
+      best = e;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+// ==== src/game/actions.js ==================
+// Every action returns true if it consumed the actor's turn. Actions that fail
+// for a reason the player could have known (walking into a wall) return false,
+// so a misclick never costs a turn -- monsters do not get a free hit from it.
+
+function moveOrAttack(game, actor, dx, dy) {
+  const nx = actor.x + dx;
+  const ny = actor.y + dy;
+  const level = game.level;
+
+  const blocker = level.blockerAt(nx, ny);
+  if (blocker && blocker !== actor) {
+    attack(game, actor, blocker);
+    return true;
+  }
+
+  if (!level.isWalkable(nx, ny)) {
+    if (actor.isPlayer) game.log('Blocked.', 'textDim');
+    return false;
+  }
+
+  actor.x = nx;
+  actor.y = ny;
+
+  if (actor.isPlayer) {
+    const items = level.itemsAt(nx, ny);
+    if (items.length) {
+      game.log('At your feet: ' + items.map((i) => i.name).join(', ') + '. [g] to take.', 'textDim');
+    }
+  }
+  return true;
+}
+
+function wait() {
+  return true;
+}
+
+function pickUp(game, actor) {
+  const items = game.level.itemsAt(actor.x, actor.y);
+  if (!items.length) {
+    game.log('Nothing here worth carrying.', 'textDim');
+    return false;
+  }
+  if (actor.inventory.length >= 9) {
+    game.log('Your pack is full. The crusade did not budget for this.', 'textDim');
+    return false;
+  }
+
+  const item = items[0];
+  game.level.remove(item);
+  actor.inventory.push(item);
+  game.log('Taken: ' + item.name + '.', 'notable');
+  if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+
+  // Two things happen on pickup rather than on use: seals open gates, and the
+  // Relic ends the crusade.
+  if (item.item.victory) game.claimVictory();
+  else game.tryUnseal(item);
+
+  return true;
+}
+
+function useItem(game, actor, index) {
+  const item = actor.inventory[index];
+  if (!item) {
+    game.log('Nothing in that slot.', 'textDim');
+    return false;
+  }
+  if (!item.item.use) {
+    game.log('The ' + item.name + ' is for carrying, not for using.', 'textDim');
+    return false;
+  }
+
+  const spent = applyEffect(game, actor, item.item.use);
+  if (spent) actor.inventory.splice(index, 1);
+  return spent;
+}
+
+function descend(game) {
+  const level = game.level;
+  const tile = level.tiles.get(game.player.x, game.player.y);
+
+  if (tile === Tiles.sealedGate) {
+    const bossName = game.bossSpec?.name ?? 'something below';
+    game.log(game.theme.strings.sealed(bossName), 'bad');
+    return false;
+  }
+
+  if (tile !== Tiles.stairsDown) {
+    game.log(game.theme.strings.noStairs, 'textDim');
+    return false;
+  }
+
+  game.nextLevel();
+  return true;
+}
+
+// ==== src/ui/render.js =====================
+// Canvas glyph renderer. Draws a terminal, essentially: one monospace character
+// per cell, three visibility states -- lit, remembered, unknown.
+//
+// Swapping this for a tileset later means changing only this file: everything
+// else talks in glyphs and colour keys, never pixels.
+class Renderer {
+  constructor(canvas, theme) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.theme = theme;
+    this.cellW = theme.cell.w;
+    this.cellH = theme.cell.h;
+  }
+
+  resize(widthInCells, heightInCells) {
+    const dpr = globalThis.devicePixelRatio || 1;
+    const w = widthInCells * this.cellW;
+    const h = heightInCells * this.cellH;
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  draw(game) {
+    const { ctx, theme } = this;
+    const level = game.level;
+    const colors = game.palette();  // region tint applied
+
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.font = theme.font;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+
+    // Terrain, in two passes of brightness.
+    for (let y = 0; y < level.height; y++) {
+      for (let x = 0; x < level.width; x++) {
+        const visible = level.visible.get(x, y);
+        const explored = level.explored.get(x, y);
+        if (!visible && !explored) continue;
+
+        const tile = level.tiles.get(x, y);
+        const base = colors[tile.key] ?? colors.text;
+        this.putGlyph(x, y, tile.glyph, visible ? base : dim(base, colors.bg, 0.62));
+      }
+    }
+
+    // Entities, but only where the player can actually see. Corpses and items
+    // draw under anything standing on them.
+    const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
+    for (const e of sorted) {
+      if (!level.visible.get(e.x, e.y)) continue;
+      this.putGlyph(e.x, e.y, e.glyph, colors[e.color] ?? colors.text);
+    }
+  }
+
+  putGlyph(x, y, glyph, color) {
+    this.ctx.fillStyle = color;
+    this.ctx.fillText(glyph, x * this.cellW + this.cellW / 2, y * this.cellH + this.cellH / 2 + 1);
+  }
+}
+
+function layer(entity) {
+  if (entity.isPlayer) return 3;
+  if (entity.ai && entity.alive) return 2;
+  if (entity.item) return 1;
+  return 0;
+}
+
+/** Blend `hex` toward `toward` by `amount` -- how remembered tiles are dimmed. */
+function dim(hex, toward, amount) {
+  const a = parseHex(hex);
+  const b = parseHex(toward);
+  const mix = a.map((channel, i) => Math.round(channel + (b[i] - channel) * amount));
+  return 'rgb(' + mix.join(',') + ')';
+}
+
+function parseHex(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// ==== src/ui/input.js ======================
+// Key bindings -> intents. Arrows, vi keys (hjkl + yubn for diagonals) and the
+// numpad all work, because roguelike players have strong opinions about this.
+const MOVES = {
+  ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+  k: [0, -1], j: [0, 1], h: [-1, 0], l: [1, 0],
+  y: [-1, -1], u: [1, -1], b: [-1, 1], n: [1, 1],
+  '8': [0, -1], '2': [0, 1], '4': [-1, 0], '6': [1, 0],
+  '7': [-1, -1], '9': [1, -1], '1': [-1, 1], '3': [1, 1],
+};
+
+function keyToIntent(event) {
+  const key = event.key;
+
+  // Digits double as inventory slots, so only treat them as movement when the
+  // numpad sent them.
+  const fromNumpad = event.code.startsWith('Numpad');
+  if (MOVES[key] && (!/^[1-9]$/.test(key) || fromNumpad)) {
+    return { type: 'move', dx: MOVES[key][0], dy: MOVES[key][1] };
+  }
+
+  if (/^[1-9]$/.test(key) && !fromNumpad) return { type: 'use', index: Number(key) - 1 };
+  if (key === '.' || key === '5' || key === 's') return { type: 'wait' };
+  if (key === 'g' || key === ',') return { type: 'pickup' };
+  if (key === '>') return { type: 'descend' };
+  if (key === 'r') return { type: 'restart' };
+  return null;
+}
+
+const HELP = [
+  ['move', 'arrows / hjkl+yubn / numpad'],
+  ['wait', '. or 5'],
+  ['pick up', 'g'],
+  ['use item', '1-9'],
+  ['descend', '>'],
+  ['restart', 'r'],
+];
+
+// ==== src/ui/panel.js ======================
+// The HTML side of the UI: who you are, where you are, what you are carrying,
+// and what the dungeon has been saying.
+class Panel {
+  constructor(root, theme) {
+    this.theme = theme;
+    this.el = {};
+    for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
+      'inventory', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
+      this.el[id] = root.querySelector('#' + id);
+    }
+
+    this.el.title.textContent = theme.name;
+    this.el.tagline.textContent = theme.tagline;
+    this.el.help.innerHTML = HELP
+      .map(([label, keys]) => '<li><span>' + label + '</span><kbd>' + keys + '</kbd></li>')
+      .join('');
+  }
+
+  update(game) {
+    const p = game.player;
+    const colors = game.palette();
+    const ratio = Math.max(0, p.hp) / p.maxHp;
+
+    this.el.crusader.textContent = game.crusaderName;
+    this.el.region.textContent = game.region.name;
+    this.el.region.style.color = colors.notable;
+    this.el.depth.textContent = this.theme.strings.floorLabel + ' ' + game.level.depth
+      + (game.level.sealed ? '  — sealed' : '');
+
+    this.el['hp-fill'].style.width = (ratio * 100).toFixed(1) + '%';
+    this.el['hp-fill'].style.background =
+      ratio > 0.5 ? colors.good : ratio > 0.25 ? colors.notable : colors.bad;
+    this.el['hp-text'].textContent = Math.max(0, p.hp) + ' / ' + p.maxHp;
+    this.el.stats.textContent = 'power ' + p.power + '   defense ' + p.defense;
+
+    this.el.statuses.innerHTML = (p.statuses ?? [])
+      .map((s) => '<span class="tag" style="color:' + colors.good + '">'
+        + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>')
+      .join(' ');
+
+    const carried = p.inventory.filter((i) => !i.item?.seal);
+    this.el.inventory.innerHTML = carried.length
+      ? p.inventory.map((item, i) => item.item?.seal ? '' :
+        '<li><kbd>' + (i + 1) + '</kbd> ' + escapeHtml(item.name) + '</li>').join('')
+      : '<li class="empty">(empty)</li>';
+
+    const seals = game.seals();
+    this.el.seals.innerHTML = seals.length
+      ? seals.map((s) => '<span class="tag" style="color:' + colors.seal + '">'
+        + escapeHtml(s.name) + '</span>').join(' ')
+      : '<span class="empty">none yet</span>';
+
+    const recent = game.messages.slice(-14);
+    this.el.log.innerHTML = recent.map((m, i) => {
+      const color = colors[m.color] ?? colors.text;
+      const faded = i < recent.length - 5 ? 0.5 : 1;
+      const suffix = m.count > 1 ? ' <em>x' + m.count + '</em>' : '';
+      return '<li style="color:' + color + ';opacity:' + faded + '">'
+        + escapeHtml(m.text) + suffix + '</li>';
+    }).join('');
+    this.el.log.scrollTop = this.el.log.scrollHeight;
+
+    this.el.seed.textContent = 'seed ' + game.seed + '  ·  crusade #' + game.memorial.runNumber();
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+// ==== src/main.js ==========================
+// Bootstrap: owns the browser-facing bits and nothing else. All rules live in
+// game/, which is why the whole game is testable under node.
+const canvas = document.getElementById('screen');
+const renderer = new Renderer(canvas, THEME);
+const panel = new Panel(document, THEME);
+
+// One memorial for the whole browser: it outlives every run, which is the point.
+const memorial = new Memorial(browserStorage());
+let game;
+
+function newGame(seed) {
+  game = new Game({ seed, theme: THEME, memorial });
+  renderer.resize(game.level.width, game.level.height);
+  redraw();
+}
+
+function redraw() {
+  renderer.draw(game);
+  panel.update(game);
+  document.body.classList.toggle('over', game.state !== 'playing');
+}
+
+function handleIntent(intent) {
+  if (intent.type === 'restart') {
+    // Debug hook: poke at the live game from the browser console.
+globalThis.crusade = { get game() { return game; }, memorial, newGame };
+
+newGame();
+    return;
+  }
+  if (game.state !== 'playing') return;
+
+  let acted = false;
+  switch (intent.type) {
+    case 'move': acted = moveOrAttack(game, game.player, intent.dx, intent.dy); break;
+    case 'wait': acted = wait(); break;
+    case 'pickup': acted = pickUp(game, game.player); break;
+    case 'use': acted = useItem(game, game.player, intent.index); break;
+    case 'descend': acted = descend(game); break;
+  }
+
+  // Claiming the Relic ends the run mid-action; do not hand the floor back.
+  if (acted && game.state === 'playing') game.playerActed();
+  redraw();
+}
+
+window.addEventListener('keydown', (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const intent = keyToIntent(event);
+  if (!intent) return;
+  event.preventDefault();
+  handleIntent(intent);
+});
+
+// Debug hook: poke at the live game from the browser console.
+globalThis.crusade = { get game() { return game; }, memorial, newGame };
+
+newGame();
+</script>
+</body>
+</html>

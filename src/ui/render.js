@@ -26,7 +26,7 @@ export class Renderer {
   draw(game) {
     const { ctx, theme } = this;
     const level = game.level;
-    const colors = theme.colors;
+    const colors = game.palette();  // region tint applied
 
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
