@@ -53,10 +53,15 @@
     color: var(--dim); margin: 0 0 6px; font-weight: 600;
   }
   #depth { font-size: 13px; margin-bottom: 6px; }
-  #hp-bar {
+  #hp-bar, #xp-bar {
     height: 8px; background: #05070a; border-radius: 2px;
     overflow: hidden; margin-bottom: 4px;
   }
+  #xp-bar { height: 4px; margin-top: 6px; }
+  #xp-fill { height: 100%; width: 0; transition: width 120ms linear; }
+  #level { margin-top: 8px; font-size: 12px; }
+  #xp-text { color: var(--dim); font-size: 10px; }
+  @media (prefers-reduced-motion: reduce) { #xp-fill { transition: none; } }
   #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
@@ -103,6 +108,9 @@
       <div id="depth"></div>
       <div id="hp-bar"><div id="hp-fill"></div></div>
       <div id="hp-text"></div>
+      <div id="level"></div>
+      <div id="xp-bar"><div id="xp-fill"></div></div>
+      <div id="xp-text"></div>
       <div id="stats"></div>
       <div id="statuses"></div>
       <div id="crusader"></div>

@@ -33,7 +33,13 @@ export const THEME = {
     boss: '#e0b25c',
     corpse: '#5c4340',
     item: '#7fa8c9',
+    // Rarity reads as colour before it reads as numbers.
+    gearCommon: '#9a8f7a',
+    gearUncommon: '#6f9fc4',
+    gearRare: '#a888d4',
+    gearSacred: '#e0b25c',
     gear: '#b9a06a',
+    xp: '#8fbf6f',
     seal: '#e0b25c',
 
     text: '#cfc7b8',
@@ -46,6 +52,13 @@ export const THEME = {
 
   strings: {
     death: 'You die. The crusade files you under martyr and continues without you.',
+    levelUp: [
+      'Something in you hardens.',
+      'You have done this enough times to be good at it.',
+      'The crusade notes your progress and revises its expectations.',
+      'You stop flinching first.',
+      'Whatever this is making of you, it is nearly finished.',
+    ],
     noStairs: 'No way down here.',
     sealed: (boss) => 'The gate is sealed. ' + boss + ' keeps the seal.',
     unsealed: 'The seal turns. Somewhere below, a gate remembers how to open.',

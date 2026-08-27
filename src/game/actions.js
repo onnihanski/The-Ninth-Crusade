@@ -3,6 +3,8 @@ import { applyEffect } from './effects.js';
 import { Tiles } from '../world/tiles.js';
 import { effectiveSpeed } from './status.js';
 
+export const MAX_PACK = 9;
+
 // Every action returns true if it consumed the actor's turn. Actions that fail
 // for a reason the player could have known (walking into a wall) return false,
 // so a misclick never costs a turn -- monsters do not get a free hit from it.
@@ -45,22 +47,53 @@ export function pickUp(game, actor) {
     game.log('Nothing here worth carrying.', 'textDim');
     return false;
   }
-  if (actor.inventory.length >= 9) {
-    game.log('Your pack is full. The crusade did not budget for this.', 'textDim');
+
+  const item = items[0];
+
+  // Seals and the Relic never occupy pack space. They are the way forward, and
+  // a full pack must never be able to strand a crusader on a sealed floor with
+  // the seal lying at their feet.
+  if (item.item.victory) {
+    game.level.remove(item);
+    game.log('Taken: ' + item.name + '.', 'notable');
+    if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+    game.claimVictory();
+    return true;
+  }
+
+  if (item.item.seal) {
+    game.level.remove(item);
+    actor.seals.push(item);
+    game.log('Taken: ' + item.name + '.', 'notable');
+    if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+    game.tryUnseal(item);
+    return true;
+  }
+
+  if (actor.inventory.length >= MAX_PACK) {
+    game.log('Your pack is full. The crusade did not budget for this. [x] to drop.', 'textDim');
     return false;
   }
 
-  const item = items[0];
   game.level.remove(item);
   actor.inventory.push(item);
   game.log('Taken: ' + item.name + '.', 'notable');
   if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+  return true;
+}
 
-  // Two things happen on pickup rather than on use: seals open gates, and the
-  // Relic ends the crusade.
-  if (item.item.victory) game.claimVictory();
-  else game.tryUnseal(item);
-
+/** Put something down. The pack is small, so this is a real decision. */
+export function dropItem(game, actor, index) {
+  const item = actor.inventory[index];
+  if (!item) {
+    game.log('Nothing in that slot.', 'textDim');
+    return false;
+  }
+  actor.inventory.splice(index, 1);
+  item.x = actor.x;
+  item.y = actor.y;
+  game.level.add(item);
+  game.log('You set down the ' + item.name + '.', 'textDim');
   return true;
 }
 
@@ -118,7 +151,7 @@ export function equipItem(game, actor, index) {
 export function unequip(game, actor, slot) {
   const item = actor.equipment[slot];
   if (!item) return false;
-  if (actor.inventory.length >= 9) {
+  if (actor.inventory.length >= MAX_PACK) {
     game.log('No room in the pack for it.', 'textDim');
     return false;
   }

@@ -28,7 +28,9 @@ export function makePlayer(x, y, name) {
     glyph: '@', color: 'player', name: name ?? 'you',
     blocks: true, speed: 100,
     maxHp: 22, hp: 22, power: 5, defense: 1,
+    level: 1, xp: 0,
     inventory: [],
+    seals: [],
     equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
@@ -41,6 +43,7 @@ export function makeMonster(spec, x, y) {
     blocks: true, speed: spec.speed,
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
+    xp: spec.xp ?? 0,
     boss: spec.boss ?? false,
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
@@ -57,7 +60,12 @@ export function makeRevenant(entry, x, y) {
   // when they go down again.
   const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
   const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
-  const hp = 14 + depth * 3;
+
+  // A revenant is the crusader as they actually were: the stats they had
+  // levelled to, plus the kit they were wearing. The fallbacks cover memorial
+  // entries written before levelling existed.
+  const hp = entry.maxHp ?? 14 + depth * 3;
+  const level = entry.level ?? 1;
 
   return makeEntity({
     x, y,
@@ -66,10 +74,12 @@ export function makeRevenant(entry, x, y) {
     blocks: true,
     speed: Math.max(40, 100 + bonus('speed')),
     maxHp: hp, hp,
-    power: 4 + Math.floor(depth / 2) + bonus('power'),
-    defense: 1 + Math.floor(depth / 4) + bonus('defense'),
+    power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
+    defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
+    xp: 20 + depth * 8 + level * 10,
     drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
     revenant: true,
+    level,
     ai: { hunting: false },
   });
 }

@@ -2,7 +2,7 @@
 // Catches what is painful to find by clicking around a browser -- scheduler
 // deadlocks, unreachable gates, AI walking into walls, memorial corruption.
 import { Game } from '../src/game/game.js';
-import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, descend } from '../src/game/actions.js';
+import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, descend } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
 import { makeItem } from '../src/game/entity.js';
 import { attack } from '../src/game/combat.js';
@@ -10,8 +10,13 @@ import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.j
 import { Tiles } from '../src/world/tiles.js';
 import { effectivePower, effectiveDefense, effectiveSpeed } from '../src/game/status.js';
 import { keyToIntent } from '../src/ui/input.js';
+import { xpToNext, tickRegeneration } from '../src/game/progress.js';
+import { mitigate } from '../src/game/combat.js';
+import { MONSTERS } from '../src/data/monsters.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
-import { ITEMS } from '../src/data/items.js';
+import { ITEMS, itemTable, SLOTS } from '../src/data/items.js';
+import { gainXp } from '../src/game/progress.js';
+import { MAX_PACK } from '../src/game/actions.js';
 
 let failures = 0;
 function check(label, condition) {
@@ -300,7 +305,16 @@ section('arms and armour');
     && g.player.inventory.some((i) => i.item.key === 'armingSword'));
   check('power follows the new weapon', effectivePower(g.player) === basePower + 3);
 
-  check('light gear costs no speed', effectiveSpeed(g.player) === 100);
+  // Derive the expectation from the data so retuning an item cannot silently
+  // invalidate the test.
+  const worn = () => Object.values(g.player.equipment).filter(Boolean)
+    .reduce((sum, i) => sum + (i.item.equip.speed ?? 0), 0);
+  check('speed tracks exactly the weight of what is worn',
+    effectiveSpeed(g.player) === 100 + worn());
+
+  equipItem(g, g.player, give('armingSword'));
+  check('weightless gear costs no speed',
+    worn() === 0 && effectiveSpeed(g.player) === 100);
   equipItem(g, g.player, give('ossuaryPlate'));
   check('heavy armour costs speed', effectiveSpeed(g.player) < 100);
   check('heavy armour still pays in defense',
@@ -381,6 +395,172 @@ section('the dead keep their kit');
   const onFloor = second.level.entities.filter((e) => e.item).map((e) => e.item.key);
   check('your old gear is recoverable off your old body',
     onFloor.includes('censerFlail') && onFloor.includes('mailHauberk'));
+}
+
+// --- experience and levels -------------------------------------------------
+section('experience and levels');
+{
+  const g = new Game({ seed: 9090, memorial: new Memorial() });
+  const p = g.player;
+  check('a crusader starts at level 1 with no experience', p.level === 1 && p.xp === 0);
+  check('each level costs more than the last',
+    [1, 2, 3, 4, 5].every((l) => xpToNext(l + 1) > xpToNext(l)));
+
+  const before = { hp: p.maxHp, power: p.power, defense: p.defense };
+  gainXp(g, p, xpToNext(1));
+  check('enough experience levels you up', p.level === 2);
+  check('levelling raises max hp', p.maxHp > before.hp);
+  check('levelling heals you by what it added', p.hp === p.maxHp);
+  check('spent experience does not carry the whole bar over', p.xp < xpToNext(2));
+
+  // Walk up to level 12 and confirm every stat has moved.
+  while (p.level < 12) gainXp(g, p, xpToNext(p.level));
+  check('power grows with levels', p.power > before.power);
+  check('defense grows with levels', p.defense > before.defense);
+  check('max hp grows steadily', p.maxHp === before.hp + 4 * 11);
+
+  // Overflow must cascade, not strand experience.
+  const q = new Game({ seed: 9091, memorial: new Memorial() });
+  gainXp(q, q.player, xpToNext(1) + xpToNext(2) + xpToNext(3));
+  check('one large award can cross several levels', q.player.level === 4);
+
+  check('experience is only ever awarded to the player', (() => {
+    const r = new Game({ seed: 9092, memorial: new Memorial() });
+    const monster = r.level.entities.find((e) => e.ai);
+    const xpBefore = r.player.xp;
+    gainXp(r, monster, 500);
+    return monster.xp !== 500 && r.player.xp === xpBefore;
+  })());
+}
+
+section('experience comes from kills');
+{
+  const g = invincible(new Game({ seed: 3131, memorial: new Memorial() }));
+  const monster = g.level.entities.find((e) => e.ai && e.alive);
+  const worth = monster.xp;
+  const before = g.player.xp + (g.player.level - 1) * 1000;
+  check('monsters are worth something', worth > 0);
+  killEntity(g, monster);
+  check('killing a monster grants its experience',
+    g.player.xp + (g.player.level - 1) * 1000 > before);
+  check('a corpse cannot be farmed for more', monster.xp === 0);
+  check('every monster in the data has an experience value',
+    Object.values(MONSTERS).every((m) => typeof m.xp === 'number' && m.xp > 0));
+  check('bosses are worth far more than the rank and file',
+    MONSTERS.herald.xp > MONSTERS.deserter.xp * 5);
+}
+
+// --- damage mitigation -----------------------------------------------------
+section('damage mitigation');
+{
+  check('no defense means no reduction', mitigate(12, 0) === 12);
+  check('defense reduces damage', mitigate(12, 6) < 12);
+  check('mitigation has diminishing returns',
+    (mitigate(20, 2) - mitigate(20, 4)) >= (mitigate(20, 18) - mitigate(20, 20)));
+  check('no amount of defense grants immunity',
+    [20, 50, 200, 10000].every((d) => mitigate(12, d) >= 1));
+  check('mitigation is monotonic in defense', (() => {
+    let last = Infinity;
+    for (let d = 0; d <= 40; d++) {
+      const dealt = mitigate(30, d);
+      if (dealt > last) return false;
+      last = dealt;
+    }
+    return true;
+  })());
+}
+
+// --- regeneration and wandering monsters -----------------------------------
+section('regeneration and wanderers');
+{
+  const g = new Game({ seed: 7070, memorial: new Memorial() });
+  g.player.hp = 5;
+  for (let i = 0; i < 200; i++) tickRegeneration(g.player);
+  check('resting heals over time', g.player.hp > 5);
+  g.player.hp = g.player.maxHp;
+  for (let i = 0; i < 200; i++) tickRegeneration(g.player);
+  check('regeneration never overheals', g.player.hp === g.player.maxHp);
+
+  // Wanderers are what stop resting from being free.
+  const w = invincible(new Game({ seed: 7071, memorial: new Memorial() }));
+  const startingMonsters = w.level.entities.filter((e) => e.ai && e.alive).length;
+  for (let i = 0; i < 400; i++) { if (w.state !== 'playing') break; w.playerActed(); }
+  const now = w.level.entities.filter((e) => e.ai && e.alive).length;
+  check('standing still eventually attracts company', now > startingMonsters);
+  check('wanderers are capped per floor', w.wanderers <= 2 + Math.floor(w.level.depth / 3));
+}
+
+// --- rarity ----------------------------------------------------------------
+section('rarity');
+{
+  const gear = Object.entries(ITEMS).filter(([, i]) => i.equip);
+  const bySlot = {};
+  for (const [key, item] of gear) (bySlot[item.equip.slot] ??= []).push({ key, ...item });
+
+  check('every slot has a range to choose between',
+    SLOTS.every((slot) => bySlot[slot].length >= 4));
+  check('every slot has a sacred piece',
+    SLOTS.every((slot) => bySlot[slot].some((i) => i.rarity === 'sacred')));
+  check('rarer gear is stronger within its slot', SLOTS.every((slot) => {
+    const value = (i) => i.equip.power + i.equip.defense;
+    const common = Math.max(...bySlot[slot].filter((i) => i.rarity === 'common').map(value));
+    const rare = Math.max(...bySlot[slot].filter((i) => i.rarity === 'rare').map(value));
+    return rare > common;
+  }));
+  check('rarer gear is scarcer where it can be found at all', SLOTS.every((slot) => {
+    const w = (r) => Math.max(...bySlot[slot].filter((i) => i.rarity === r).map((i) => i.weight));
+    return w('common') > w('uncommon');
+  }));
+  check('rarity is legible as colour', gear.every(([, i]) => i.color.startsWith('gear')));
+
+  // The whole point: sacred gear cannot be found lying around.
+  check('sacred gear never rolls on any floor',
+    [1, 3, 6, 9, 12].every((d) => itemTable(d).every((i) => i.rarity !== 'sacred')));
+  const sacred = gear.filter(([, i]) => i.rarity === 'sacred').map(([k]) => k);
+  const dropped = Object.values(MONSTERS).filter((m) => m.boss).flatMap((m) => m.drops ?? []);
+  check('every sacred piece is carried by a boss',
+    sacred.every((key) => dropped.includes(key)));
+
+  // And that it actually reaches the player's hands.
+  const g = invincible(new Game({ seed: 1212, memorial: new Memorial() }));
+  g.buildLevel(3);
+  const boss = g.level.entities.find((e) => e.boss);
+  killEntity(g, boss);
+  const spoils = g.level.entities.filter((e) => e.item).map((e) => e.item.key);
+  check('the first boss yields its sacred weapon', spoils.includes('heraldsPollaxe'));
+}
+
+// --- the pack --------------------------------------------------------------
+section('the pack');
+{
+  const g = new Game({ seed: 5555, memorial: new Memorial() });
+  const p = g.player;
+  for (let i = 0; i < MAX_PACK; i++) {
+    p.inventory.push(makeItem({ key: 'reliquaryPhial', ...ITEMS.reliquaryPhial }, 0, 0));
+  }
+  g.level.add(makeItem({ key: 'gambeson', ...ITEMS.gambeson }, p.x, p.y));
+  check('a full pack refuses more', pickUp(g, p) === false && p.inventory.length === MAX_PACK);
+  check('dropping frees a slot',
+    dropItem(g, p, 0) && p.inventory.length === MAX_PACK - 1);
+  check('what you drop is on the floor where you stand',
+    g.level.itemsAt(p.x, p.y).some((i) => i.item.key === 'reliquaryPhial'));
+
+  // A seal must never be blocked by pack space: that would strand a crusader
+  // on a sealed floor with the seal at their feet and no way to lift it.
+  const h = invincible(new Game({ seed: 5556, memorial: new Memorial() }));
+  h.buildLevel(3);
+  for (let i = 0; i < MAX_PACK; i++) {
+    h.player.inventory.push(makeItem({ key: 'reliquaryPhial', ...ITEMS.reliquaryPhial }, 0, 0));
+  }
+  const bossThere = h.level.entities.find((e) => e.boss);
+  killEntity(h, bossThere);
+  const sealOnFloor = h.level.entities.find((e) => e.item?.seal);
+  walkTo(h, sealOnFloor.x, sealOnFloor.y);
+  pickUp(h, h.player);
+  check('a seal is taken even with a full pack', h.seals().length === 1);
+  check('and it still opens the gate', h.level.sealed === false);
+  check('seals never consume pack space',
+    h.player.inventory.every((i) => !i.item.seal) && h.player.inventory.length === MAX_PACK);
 }
 
 // --- long random playthroughs ----------------------------------------------

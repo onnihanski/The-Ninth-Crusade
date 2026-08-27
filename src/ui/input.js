@@ -31,6 +31,7 @@ export function keyToIntent(event) {
   if (/^[1-9]$/.test(key)) return { type: 'use', index: Number(key) - 1 };
   if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
+  if (key === 'x') return { type: 'drop' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -42,6 +43,7 @@ export const HELP = [
   ['wait', 'space'],
   ['take', 'g'],
   ['use / wear', '1-9'],
+  ['drop', 'x then 1-9'],
   ['descend', '>'],
   ['restart', 'r'],
 ];

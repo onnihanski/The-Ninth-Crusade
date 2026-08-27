@@ -1,6 +1,34 @@
-// Relics are the game's magic: no spellbook, no mana, just consumable objects
-// with one clear verb each. `use` is a tagged effect resolved in game/effects.js.
+// Relics are consumed; gear is worn. Both are pure data -- `use` is resolved in
+// game/effects.js and `equip` in game/status.js.
+
+// Rarity is a spawn-frequency band and a colour, not a stat. It reads at a
+// glance on the floor, which is the whole point of colouring loot.
+const RARITY_COLOR = {
+  common: 'gearCommon',
+  uncommon: 'gearUncommon',
+  rare: 'gearRare',
+  sacred: 'gearSacred',
+};
+
+/**
+ * Sacred gear never rolls on a floor. The only way to hold it is to kill the
+ * thing carrying it, which is what makes bosses worth more than their seal.
+ */
+function gear({ name, glyph, slot, rarity, power = 0, defense = 0, speed = 0,
+  minDepth = 1, weight = 0, flavour }) {
+  return {
+    name, glyph, rarity,
+    color: RARITY_COLOR[rarity],
+    bossOnly: rarity === 'sacred',
+    weight: rarity === 'sacred' ? 0 : weight,
+    minDepth,
+    equip: { slot, power, defense, speed },
+    flavour,
+  };
+}
+
 export const ITEMS = {
+  // -- Relics: spent, not worn ----------------------------------------------
   reliquaryPhial: {
     name: 'reliquary phial', glyph: '!', color: 'item',
     weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
@@ -22,62 +50,101 @@ export const ITEMS = {
     flavour: 'The floor forgets you were standing on it.',
   },
 
-  // -- Arms and armour ------------------------------------------------------
-  //
-  // Every piece is a trade, never a straight upgrade: the heavy things cost
-  // speed, and speed is turns. `slot` is what it displaces when worn.
-  armingSword: {
-    name: 'arming sword', glyph: ')', color: 'gear',
-    weight: 9, minDepth: 1, equip: { slot: 'weapon', power: 2 },
+  // -- Weapons --------------------------------------------------------------
+  armingSword: gear({
+    name: 'arming sword', glyph: ')', slot: 'weapon', rarity: 'common',
+    power: 2, minDepth: 1, weight: 12,
     flavour: 'Issued, not chosen.',
-  },
-  flangedMace: {
-    name: 'flanged mace', glyph: ')', color: 'gear',
-    weight: 7, minDepth: 3, equip: { slot: 'weapon', power: 3 },
+  }),
+  flangedMace: gear({
+    name: 'flanged mace', glyph: ')', slot: 'weapon', rarity: 'common',
+    power: 3, speed: -5, minDepth: 2, weight: 10,
     flavour: 'Technically not a blade, so technically permitted.',
-  },
-  censerFlail: {
-    name: 'censer flail', glyph: ')', color: 'gear',
-    weight: 5, minDepth: 6, equip: { slot: 'weapon', power: 5, speed: -10 },
+  }),
+  pilgrimsFalchion: gear({
+    name: "pilgrim's falchion", glyph: ')', slot: 'weapon', rarity: 'uncommon',
+    power: 4, minDepth: 4, weight: 6,
+    flavour: 'Carried a long way by someone who stopped.',
+  }),
+  censerFlail: gear({
+    name: 'censer flail', glyph: ')', slot: 'weapon', rarity: 'uncommon',
+    power: 5, speed: -10, minDepth: 6, weight: 5,
     flavour: 'Swung wide, it still smells of the service.',
-  },
-  martyrsGreatsword: {
-    name: "martyr's greatsword", glyph: ')', color: 'gear',
-    weight: 4, minDepth: 8, equip: { slot: 'weapon', power: 7, speed: -25 },
+  }),
+  martyrsGreatsword: gear({
+    name: "martyr's greatsword", glyph: ')', slot: 'weapon', rarity: 'rare',
+    power: 7, speed: -25, minDepth: 8, weight: 3,
     flavour: 'Two hands, one conviction, no hurry.',
-  },
+  }),
+  heraldsPollaxe: gear({
+    name: "the Herald's pollaxe", glyph: ')', slot: 'weapon', rarity: 'sacred',
+    power: 6, speed: -5,
+    flavour: 'He read your name off a list. This is the rest of the sentence.',
+  }),
 
-  kiteShield: {
-    name: 'battered kite shield', glyph: '(', color: 'gear',
-    weight: 8, minDepth: 1, equip: { slot: 'shield', defense: 1 },
+  // -- Shields --------------------------------------------------------------
+  kiteShield: gear({
+    name: 'battered kite shield', glyph: '(', slot: 'shield', rarity: 'common',
+    defense: 1, minDepth: 1, weight: 12,
     flavour: 'Someone else stopped something with this.',
-  },
-  heaterShield: {
-    name: 'heater shield', glyph: '(', color: 'gear',
-    weight: 6, minDepth: 4, equip: { slot: 'shield', defense: 2, speed: -5 },
+  }),
+  heaterShield: gear({
+    name: 'heater shield', glyph: '(', slot: 'shield', rarity: 'common',
+    defense: 2, speed: -5, minDepth: 3, weight: 10,
     flavour: 'Painted with a wall, badly.',
-  },
-  aegisOfAmbrose: {
-    name: 'aegis of Saint Ambrose', glyph: '(', color: 'gear',
-    weight: 3, minDepth: 7, equip: { slot: 'shield', defense: 3, speed: -10 },
+  }),
+  ossuaryBuckler: gear({
+    name: 'ossuary buckler', glyph: '(', slot: 'shield', rarity: 'uncommon',
+    defense: 2, speed: 5, minDepth: 5, weight: 6,
+    flavour: 'Light, and it wants you to keep moving.',
+  }),
+  siegePavise: gear({
+    name: 'siege pavise', glyph: '(', slot: 'shield', rarity: 'uncommon',
+    defense: 3, speed: -15, minDepth: 5, weight: 5,
+    flavour: 'A wall you have to carry.',
+  }),
+  towerShield: gear({
+    name: 'tower shield', glyph: '(', slot: 'shield', rarity: 'rare',
+    defense: 4, speed: -20, minDepth: 8, weight: 3,
+    flavour: 'Behind this, very little happens to you. Slowly.',
+  }),
+  aegisOfAmbrose: gear({
+    name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
+    defense: 4, speed: -5,
     flavour: 'It did not work for him either, but it took longer.',
-  },
+  }),
 
-  gambeson: {
-    name: 'padded gambeson', glyph: '[', color: 'gear',
-    weight: 9, minDepth: 1, equip: { slot: 'armour', defense: 1 },
+  // -- Armour ---------------------------------------------------------------
+  gambeson: gear({
+    name: 'padded gambeson', glyph: '[', slot: 'armour', rarity: 'common',
+    defense: 1, minDepth: 1, weight: 12,
     flavour: 'Warm. That is the whole of it.',
-  },
-  mailHauberk: {
-    name: 'mail hauberk', glyph: '[', color: 'gear',
-    weight: 7, minDepth: 3, equip: { slot: 'armour', defense: 2, speed: -10 },
+  }),
+  mailHauberk: gear({
+    name: 'mail hauberk', glyph: '[', slot: 'armour', rarity: 'common',
+    defense: 2, speed: -10, minDepth: 3, weight: 10,
     flavour: 'Four thousand rings, all of them yours to carry.',
-  },
-  ossuaryPlate: {
-    name: 'ossuary plate', glyph: '[', color: 'gear',
-    weight: 4, minDepth: 7, equip: { slot: 'armour', defense: 4, speed: -25 },
+  }),
+  brigandine: gear({
+    name: 'brigandine', glyph: '[', slot: 'armour', rarity: 'uncommon',
+    defense: 3, speed: -12, minDepth: 5, weight: 6,
+    flavour: 'Plates on the inside, so nobody can tell how frightened you are.',
+  }),
+  ossuaryPlate: gear({
+    name: 'ossuary plate', glyph: '[', slot: 'armour', rarity: 'rare',
+    defense: 4, speed: -25, minDepth: 7, weight: 4,
     flavour: 'Fitted to someone your size. He is not using it.',
-  },
+  }),
+  sepulchreHarness: gear({
+    name: 'sepulchre harness', glyph: '[', slot: 'armour', rarity: 'rare',
+    defense: 5, speed: -30, minDepth: 10, weight: 2,
+    flavour: 'It was buried with someone. It got up anyway.',
+  }),
+  vestmentOfTheChoir: gear({
+    name: 'vestment of the choir', glyph: '[', slot: 'armour', rarity: 'sacred',
+    defense: 5,
+    flavour: 'Weightless. Whatever is holding it up is not the cloth.',
+  }),
 
   // -- Seals: not usable, only carried. Their whole function is opening gates.
   brassSeal: {
@@ -98,9 +165,11 @@ export const ITEMS = {
   },
 };
 
-/** Only floor-spawnable relics -- seals are placed by bosses, never rolled. */
+/** Floor-spawnable only: sacred gear and seals are placed by bosses. */
 export function itemTable(depth) {
   return Object.entries(ITEMS)
-    .filter(([, item]) => item.weight && depth >= item.minDepth)
+    .filter(([, item]) => item.weight && !item.bossOnly && depth >= item.minDepth)
     .map(([key, item]) => ({ key, ...item }));
 }
+
+export const SLOTS = ['weapon', 'shield', 'armour'];

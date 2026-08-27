@@ -24,7 +24,7 @@ export function applyEffect(game, user, effect) {
         return true;
       }
       game.log('One held note breaks over the ' + target.name + '.', 'mythic');
-      damage(game, target, effect.amount);
+      damage(game, target, effect.amount, user);
       return true;
     }
 

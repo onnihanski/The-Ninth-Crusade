@@ -1,7 +1,8 @@
 import { Game } from './game/game.js';
 import { makeItem } from './game/entity.js';
 import { ITEMS } from './data/items.js';
-import { moveOrAttack, wait, pickUp, useItem, descend } from './game/actions.js';
+import { gainXp } from './game/progress.js';
+import { moveOrAttack, wait, pickUp, useItem, dropItem, descend } from './game/actions.js';
 import { Memorial, browserStorage } from './game/memorial.js';
 import { THEME } from './data/theme.js';
 import { Renderer } from './ui/render.js';
@@ -17,8 +18,11 @@ const panel = new Panel(document, THEME);
 // One memorial for the whole browser: it outlives every run, which is the point.
 const memorial = new Memorial(browserStorage());
 let game;
+// `x` arms a drop; the next slot key resolves it. Anything else cancels.
+let pendingDrop = false;
 
 function newGame(seed) {
+  pendingDrop = false;
   game = new Game({ seed, theme: THEME, memorial });
   renderer.resize(game.level.width, game.level.height);
   redraw();
@@ -33,7 +37,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
 
 newGame();
 
@@ -44,12 +48,23 @@ globalThis.document?.fonts?.ready.then(redraw);
   }
   if (game.state !== 'playing') return;
 
+  const wasPendingDrop = pendingDrop;
+  pendingDrop = false;
+
   let acted = false;
   switch (intent.type) {
     case 'move': acted = moveOrAttack(game, game.player, intent.dx, intent.dy); break;
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
-    case 'use': acted = useItem(game, game.player, intent.index); break;
+    case 'use':
+      acted = wasPendingDrop
+        ? dropItem(game, game.player, intent.index)
+        : useItem(game, game.player, intent.index);
+      break;
+    case 'drop':
+      if (!game.player.inventory.length) game.log('Your pack is already empty.', 'textDim');
+      else { pendingDrop = true; game.log('Drop which? [1-9]', 'textDim'); }
+      break;
     case 'descend': acted = descend(game); break;
   }
 
@@ -67,6 +82,6 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
 
 newGame();

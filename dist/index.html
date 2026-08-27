@@ -53,10 +53,15 @@
     color: var(--dim); margin: 0 0 6px; font-weight: 600;
   }
   #depth { font-size: 13px; margin-bottom: 6px; }
-  #hp-bar {
+  #hp-bar, #xp-bar {
     height: 8px; background: #05070a; border-radius: 2px;
     overflow: hidden; margin-bottom: 4px;
   }
+  #xp-bar { height: 4px; margin-top: 6px; }
+  #xp-fill { height: 100%; width: 0; transition: width 120ms linear; }
+  #level { margin-top: 8px; font-size: 12px; }
+  #xp-text { color: var(--dim); font-size: 10px; }
+  @media (prefers-reduced-motion: reduce) { #xp-fill { transition: none; } }
   #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
   @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
@@ -103,6 +108,9 @@
       <div id="depth"></div>
       <div id="hp-bar"><div id="hp-fill"></div></div>
       <div id="hp-text"></div>
+      <div id="level"></div>
+      <div id="xp-bar"><div id="xp-fill"></div></div>
+      <div id="xp-text"></div>
       <div id="stats"></div>
       <div id="statuses"></div>
       <div id="crusader"></div>
@@ -503,9 +511,37 @@ class Level {
 }
 
 // ==== src/data/items.js ====================
-// Relics are the game's magic: no spellbook, no mana, just consumable objects
-// with one clear verb each. `use` is a tagged effect resolved in game/effects.js.
+// Relics are consumed; gear is worn. Both are pure data -- `use` is resolved in
+// game/effects.js and `equip` in game/status.js.
+
+// Rarity is a spawn-frequency band and a colour, not a stat. It reads at a
+// glance on the floor, which is the whole point of colouring loot.
+const RARITY_COLOR = {
+  common: 'gearCommon',
+  uncommon: 'gearUncommon',
+  rare: 'gearRare',
+  sacred: 'gearSacred',
+};
+
+/**
+ * Sacred gear never rolls on a floor. The only way to hold it is to kill the
+ * thing carrying it, which is what makes bosses worth more than their seal.
+ */
+function gear({ name, glyph, slot, rarity, power = 0, defense = 0, speed = 0,
+  minDepth = 1, weight = 0, flavour }) {
+  return {
+    name, glyph, rarity,
+    color: RARITY_COLOR[rarity],
+    bossOnly: rarity === 'sacred',
+    weight: rarity === 'sacred' ? 0 : weight,
+    minDepth,
+    equip: { slot, power, defense, speed },
+    flavour,
+  };
+}
+
 const ITEMS = {
+  // -- Relics: spent, not worn ----------------------------------------------
   reliquaryPhial: {
     name: 'reliquary phial', glyph: '!', color: 'item',
     weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
@@ -527,62 +563,101 @@ const ITEMS = {
     flavour: 'The floor forgets you were standing on it.',
   },
 
-  // -- Arms and armour ------------------------------------------------------
-  //
-  // Every piece is a trade, never a straight upgrade: the heavy things cost
-  // speed, and speed is turns. `slot` is what it displaces when worn.
-  armingSword: {
-    name: 'arming sword', glyph: ')', color: 'gear',
-    weight: 9, minDepth: 1, equip: { slot: 'weapon', power: 2 },
+  // -- Weapons --------------------------------------------------------------
+  armingSword: gear({
+    name: 'arming sword', glyph: ')', slot: 'weapon', rarity: 'common',
+    power: 2, minDepth: 1, weight: 12,
     flavour: 'Issued, not chosen.',
-  },
-  flangedMace: {
-    name: 'flanged mace', glyph: ')', color: 'gear',
-    weight: 7, minDepth: 3, equip: { slot: 'weapon', power: 3 },
+  }),
+  flangedMace: gear({
+    name: 'flanged mace', glyph: ')', slot: 'weapon', rarity: 'common',
+    power: 3, speed: -5, minDepth: 2, weight: 10,
     flavour: 'Technically not a blade, so technically permitted.',
-  },
-  censerFlail: {
-    name: 'censer flail', glyph: ')', color: 'gear',
-    weight: 5, minDepth: 6, equip: { slot: 'weapon', power: 5, speed: -10 },
+  }),
+  pilgrimsFalchion: gear({
+    name: "pilgrim's falchion", glyph: ')', slot: 'weapon', rarity: 'uncommon',
+    power: 4, minDepth: 4, weight: 6,
+    flavour: 'Carried a long way by someone who stopped.',
+  }),
+  censerFlail: gear({
+    name: 'censer flail', glyph: ')', slot: 'weapon', rarity: 'uncommon',
+    power: 5, speed: -10, minDepth: 6, weight: 5,
     flavour: 'Swung wide, it still smells of the service.',
-  },
-  martyrsGreatsword: {
-    name: "martyr's greatsword", glyph: ')', color: 'gear',
-    weight: 4, minDepth: 8, equip: { slot: 'weapon', power: 7, speed: -25 },
+  }),
+  martyrsGreatsword: gear({
+    name: "martyr's greatsword", glyph: ')', slot: 'weapon', rarity: 'rare',
+    power: 7, speed: -25, minDepth: 8, weight: 3,
     flavour: 'Two hands, one conviction, no hurry.',
-  },
+  }),
+  heraldsPollaxe: gear({
+    name: "the Herald's pollaxe", glyph: ')', slot: 'weapon', rarity: 'sacred',
+    power: 6, speed: -5,
+    flavour: 'He read your name off a list. This is the rest of the sentence.',
+  }),
 
-  kiteShield: {
-    name: 'battered kite shield', glyph: '(', color: 'gear',
-    weight: 8, minDepth: 1, equip: { slot: 'shield', defense: 1 },
+  // -- Shields --------------------------------------------------------------
+  kiteShield: gear({
+    name: 'battered kite shield', glyph: '(', slot: 'shield', rarity: 'common',
+    defense: 1, minDepth: 1, weight: 12,
     flavour: 'Someone else stopped something with this.',
-  },
-  heaterShield: {
-    name: 'heater shield', glyph: '(', color: 'gear',
-    weight: 6, minDepth: 4, equip: { slot: 'shield', defense: 2, speed: -5 },
+  }),
+  heaterShield: gear({
+    name: 'heater shield', glyph: '(', slot: 'shield', rarity: 'common',
+    defense: 2, speed: -5, minDepth: 3, weight: 10,
     flavour: 'Painted with a wall, badly.',
-  },
-  aegisOfAmbrose: {
-    name: 'aegis of Saint Ambrose', glyph: '(', color: 'gear',
-    weight: 3, minDepth: 7, equip: { slot: 'shield', defense: 3, speed: -10 },
+  }),
+  ossuaryBuckler: gear({
+    name: 'ossuary buckler', glyph: '(', slot: 'shield', rarity: 'uncommon',
+    defense: 2, speed: 5, minDepth: 5, weight: 6,
+    flavour: 'Light, and it wants you to keep moving.',
+  }),
+  siegePavise: gear({
+    name: 'siege pavise', glyph: '(', slot: 'shield', rarity: 'uncommon',
+    defense: 3, speed: -15, minDepth: 5, weight: 5,
+    flavour: 'A wall you have to carry.',
+  }),
+  towerShield: gear({
+    name: 'tower shield', glyph: '(', slot: 'shield', rarity: 'rare',
+    defense: 4, speed: -20, minDepth: 8, weight: 3,
+    flavour: 'Behind this, very little happens to you. Slowly.',
+  }),
+  aegisOfAmbrose: gear({
+    name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
+    defense: 4, speed: -5,
     flavour: 'It did not work for him either, but it took longer.',
-  },
+  }),
 
-  gambeson: {
-    name: 'padded gambeson', glyph: '[', color: 'gear',
-    weight: 9, minDepth: 1, equip: { slot: 'armour', defense: 1 },
+  // -- Armour ---------------------------------------------------------------
+  gambeson: gear({
+    name: 'padded gambeson', glyph: '[', slot: 'armour', rarity: 'common',
+    defense: 1, minDepth: 1, weight: 12,
     flavour: 'Warm. That is the whole of it.',
-  },
-  mailHauberk: {
-    name: 'mail hauberk', glyph: '[', color: 'gear',
-    weight: 7, minDepth: 3, equip: { slot: 'armour', defense: 2, speed: -10 },
+  }),
+  mailHauberk: gear({
+    name: 'mail hauberk', glyph: '[', slot: 'armour', rarity: 'common',
+    defense: 2, speed: -10, minDepth: 3, weight: 10,
     flavour: 'Four thousand rings, all of them yours to carry.',
-  },
-  ossuaryPlate: {
-    name: 'ossuary plate', glyph: '[', color: 'gear',
-    weight: 4, minDepth: 7, equip: { slot: 'armour', defense: 4, speed: -25 },
+  }),
+  brigandine: gear({
+    name: 'brigandine', glyph: '[', slot: 'armour', rarity: 'uncommon',
+    defense: 3, speed: -12, minDepth: 5, weight: 6,
+    flavour: 'Plates on the inside, so nobody can tell how frightened you are.',
+  }),
+  ossuaryPlate: gear({
+    name: 'ossuary plate', glyph: '[', slot: 'armour', rarity: 'rare',
+    defense: 4, speed: -25, minDepth: 7, weight: 4,
     flavour: 'Fitted to someone your size. He is not using it.',
-  },
+  }),
+  sepulchreHarness: gear({
+    name: 'sepulchre harness', glyph: '[', slot: 'armour', rarity: 'rare',
+    defense: 5, speed: -30, minDepth: 10, weight: 2,
+    flavour: 'It was buried with someone. It got up anyway.',
+  }),
+  vestmentOfTheChoir: gear({
+    name: 'vestment of the choir', glyph: '[', slot: 'armour', rarity: 'sacred',
+    defense: 5,
+    flavour: 'Weightless. Whatever is holding it up is not the cloth.',
+  }),
 
   // -- Seals: not usable, only carried. Their whole function is opening gates.
   brassSeal: {
@@ -603,12 +678,14 @@ const ITEMS = {
   },
 };
 
-/** Only floor-spawnable relics -- seals are placed by bosses, never rolled. */
+/** Floor-spawnable only: sacred gear and seals are placed by bosses. */
 function itemTable(depth) {
   return Object.entries(ITEMS)
-    .filter(([, item]) => item.weight && depth >= item.minDepth)
+    .filter(([, item]) => item.weight && !item.bossOnly && depth >= item.minDepth)
     .map(([key, item]) => ({ key, ...item }));
 }
+
+const SLOTS = ['weapon', 'shield', 'armour'];
 
 // ==== src/game/entity.js ===================
 // Entities are plain bags of optional fields rather than a class hierarchy.
@@ -640,7 +717,9 @@ function makePlayer(x, y, name) {
     glyph: '@', color: 'player', name: name ?? 'you',
     blocks: true, speed: 100,
     maxHp: 22, hp: 22, power: 5, defense: 1,
+    level: 1, xp: 0,
     inventory: [],
+    seals: [],
     equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
@@ -653,6 +732,7 @@ function makeMonster(spec, x, y) {
     blocks: true, speed: spec.speed,
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
+    xp: spec.xp ?? 0,
     boss: spec.boss ?? false,
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
@@ -669,7 +749,12 @@ function makeRevenant(entry, x, y) {
   // when they go down again.
   const kit = (entry.equipment ?? []).map((key) => ITEMS[key]).filter(Boolean);
   const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
-  const hp = 14 + depth * 3;
+
+  // A revenant is the crusader as they actually were: the stats they had
+  // levelled to, plus the kit they were wearing. The fallbacks cover memorial
+  // entries written before levelling existed.
+  const hp = entry.maxHp ?? 14 + depth * 3;
+  const level = entry.level ?? 1;
 
   return makeEntity({
     x, y,
@@ -678,10 +763,12 @@ function makeRevenant(entry, x, y) {
     blocks: true,
     speed: Math.max(40, 100 + bonus('speed')),
     maxHp: hp, hp,
-    power: 4 + Math.floor(depth / 2) + bonus('power'),
-    defense: 1 + Math.floor(depth / 4) + bonus('defense'),
+    power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
+    defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
+    xp: 20 + depth * 8 + level * 10,
     drops: [...(entry.relics ?? []), ...(entry.equipment ?? [])],
     revenant: true,
+    level,
     ai: { hunting: false },
   });
 }
@@ -761,32 +848,123 @@ function effectiveSpeed(entity) {
   return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
 }
 
+// ==== src/game/progress.js =================
+// Experience and levels.
+//
+// The curve is deliberately shallow and legible: each level costs a little more
+// than the last, and a thorough crusader who fights what they meet should be
+// arriving at the Empty Tomb around level 9 or 10. `tools/balance.mjs` is what
+// keeps that claim honest -- re-run it after touching any number in here.
+const XP_BASE = 30;
+const XP_STEP = 25;
+
+const HP_PER_LEVEL = 4;
+const REGEN_TURNS = 20;
+const POWER_EVERY = 2;    // levels
+const DEFENSE_EVERY = 3;  // levels
+
+/**
+ * Slow regeneration, the traditional kind. Without it the only sustain is
+ * phials, every scratch is permanent, and a floor of weak monsters kills by
+ * accumulation rather than by any single mistake. It also gives retreating a
+ * point, which is most of what makes a roguelike tactical.
+ */
+function tickRegeneration(actor) {
+  if (actor.hp >= actor.maxHp) {
+    actor.regenTimer = 0;
+    return;
+  }
+  actor.regenTimer = (actor.regenTimer ?? 0) + 1;
+  if (actor.regenTimer < REGEN_TURNS) return;
+  actor.regenTimer = 0;
+  actor.hp++;
+}
+
+/** XP needed to go from `level` to the next one. */
+function xpToNext(level) {
+  return XP_BASE + XP_STEP * level;
+}
+
+/** What a monster is worth. Revenants are priced by the crusader they were. */
+function xpValue(entity) {
+  return entity.xp ?? 0;
+}
+
+function gainXp(game, actor, amount) {
+  if (!actor.isPlayer || amount <= 0) return;
+  actor.xp += amount;
+
+  while (actor.xp >= xpToNext(actor.level)) {
+    actor.xp -= xpToNext(actor.level);
+    levelUp(game, actor);
+  }
+}
+
+function levelUp(game, actor) {
+  actor.level++;
+
+  // HP every level; the other two on a slower cadence, so gear stays the
+  // dominant source of power and levels stay a steady floor under it.
+  actor.maxHp += HP_PER_LEVEL;
+  actor.hp += HP_PER_LEVEL;
+
+  const gains = ['+' + HP_PER_LEVEL + ' max hp'];
+  if (actor.level % POWER_EVERY === 0) {
+    actor.power++;
+    gains.push('+1 power');
+  }
+  if (actor.level % DEFENSE_EVERY === 0) {
+    actor.defense++;
+    gains.push('+1 defense');
+  }
+
+  const lines = game.theme.strings.levelUp;
+  game.log(lines[Math.min(actor.level - 2, lines.length - 1)] ?? lines[lines.length - 1], 'mythic');
+  game.log('Level ' + actor.level + '. ' + gains.join(', ') + '.', 'notable');
+}
+
 // ==== src/game/combat.js ===================
-// Deliberately simple: power vs defense with a small random spread. The first
-// thing worth deepening once the content settles -- to-hit rolls, damage types,
-// resistances all slot in here without touching anything else.
+// Defense mitigates a *proportion* of the blow rather than subtracting from it.
+//
+// Flat subtraction cannot survive two systems feeding the same stat: levelling
+// and gear together reach defense 14 by the Empty Tomb, which is more than the
+// deepest monster's power, and the crusader simply stops being hurt. Running
+// the balance harness against the subtractive version put every late monster
+// on exactly the minimum-damage floor.
+//
+// This curve gives diminishing returns instead: each point of defense is worth
+// a lot at 0 and a little at 20, and the total never reaches immunity.
+const ARMOUR_SCALE = 9;
+const MIN_DAMAGE = 1;
+
+function mitigate(rawDamage, defense) {
+  const kept = ARMOUR_SCALE / (ARMOUR_SCALE + Math.max(0, defense));
+  return Math.max(MIN_DAMAGE, Math.round(rawDamage * kept));
+}
+
 function attack(game, attacker, defender) {
   if (defender.isPlayer) game.lastAttacker = article(attacker);
+
   const power = effectivePower(attacker);
   const roll = game.rng.int(power - 1, power + 1);
-  const dealt = Math.max(0, roll - effectiveDefense(defender));
+  const dealt = mitigate(roll, effectiveDefense(defender));
+  const absorbed = dealt <= MIN_DAMAGE && roll > MIN_DAMAGE;
+
   const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
   const object = defender.isPlayer ? 'you' : article(defender);
   const verb = attacker.isPlayer ? 'hit' : 'hits';
 
-  if (dealt <= 0) {
-    game.log(subject + ' ' + verb + ' ' + object + ', to no effect.', 'textDim');
-    return;
-  }
-
   game.log(
-    subject + ' ' + verb + ' ' + object + ' for ' + dealt + '.',
-    attacker.isPlayer ? 'text' : 'bad',
+    absorbed
+      ? subject + ' ' + verb + ' ' + object + ', and it barely tells.'
+      : subject + ' ' + verb + ' ' + object + ' for ' + dealt + '.',
+    absorbed ? 'textDim' : attacker.isPlayer ? 'text' : 'bad',
   );
-  damage(game, defender, dealt);
+  damage(game, defender, dealt, attacker);
 }
 
-function damage(game, target, amount) {
+/** `source` is whoever caused this, and is who collects the experience. */
+function damage(game, target, amount, source = null) {
   target.hp -= amount;
   if (target.hp > 0) return;
 
@@ -798,12 +976,14 @@ function damage(game, target, amount) {
   }
 
   game.log(capitalize(article(target)) + ' is finished.', 'good');
+  if (source?.isPlayer) gainXp(game, source, xpValue(target));
   game.spillDrops(target);
 
   target.alive = false;
   target.blocks = false;
   target.speed = 0;
   target.ai = null;
+  target.xp = 0;
   target.glyph = '%';
   target.color = 'corpse';
   target.name = 'the remains of ' + bareName(target);
@@ -972,39 +1152,39 @@ const MONSTERS = {
   // -- The Siege Yards: mundane, tired, hungry -------------------------------
   campDog: {
     name: 'camp dog', glyph: 'd', color: 'monsterWeak',
-    weight: 12, maxHp: 5, power: 3, defense: 0, speed: 150,
+    weight: 12, maxHp: 5, power: 3, defense: 0, speed: 150, xp: 4,
   },
   deserter: {
     name: 'deserter', glyph: 'p', color: 'monsterWeak',
-    weight: 10, maxHp: 8, power: 3, defense: 1, speed: 100,
+    weight: 10, maxHp: 8, power: 3, defense: 1, speed: 100, xp: 6,
   },
   flagellant: {
     name: 'flagellant', glyph: 'f', color: 'monsterTough',
-    weight: 7, maxHp: 10, power: 5, defense: 0, speed: 100,
+    weight: 7, maxHp: 10, power: 4, defense: 0, speed: 100, xp: 10,
   },
   herald: {
     name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
-    boss: true, maxHp: 32, power: 6, defense: 2, speed: 110,
-    drops: ['brassSeal', 'heaterShield'],
+    boss: true, maxHp: 26, power: 5, defense: 2, speed: 105, xp: 70,
+    drops: ['brassSeal', 'heraldsPollaxe'],
     entrance: 'A man in very good armour reads your name off a list and looks disappointed.',
   },
 
   // -- The Reliquary: patient, dry, well-catalogued --------------------------
   bonepicker: {
     name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
-    weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100,
+    weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100, xp: 14,
   },
   reliquaryMoth: {
     name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
-    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170,
+    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170, xp: 12,
   },
   ossuaryWarden: {
     name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
-    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80,
+    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80, xp: 24,
   },
   saintAmbrose: {
     name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
-    boss: true, maxHp: 48, power: 8, defense: 3, speed: 100,
+    boss: true, maxHp: 44, power: 8, defense: 3, speed: 100, xp: 140,
     drops: ['silverSeal', 'aegisOfAmbrose', 'reliquaryPhial'],
     entrance: 'A saint sits up, brushes himself off, and apologises for the state of the room.',
   },
@@ -1012,39 +1192,39 @@ const MONSTERS = {
   // -- The Choir: the floor where the game stops being mundane ---------------
   chorister: {
     name: 'chorister', glyph: 'c', color: 'monsterWeak',
-    weight: 10, maxHp: 14, power: 6, defense: 1, speed: 110,
+    weight: 10, maxHp: 14, power: 5, defense: 1, speed: 110, xp: 24,
   },
   censerbearer: {
     name: 'censerbearer', glyph: 'C', color: 'monsterTough',
-    weight: 7, maxHp: 20, power: 7, defense: 2, speed: 100,
+    weight: 7, maxHp: 20, power: 6, defense: 2, speed: 100, xp: 32,
   },
   wingedThing: {
     name: 'winged thing', glyph: 'A', color: 'monsterTough',
-    weight: 5, maxHp: 16, power: 9, defense: 1, speed: 150,
+    weight: 5, maxHp: 16, power: 8, defense: 1, speed: 150, xp: 30,
   },
   theVoice: {
     name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
-    boss: true, maxHp: 62, power: 10, defense: 4, speed: 120,
-    drops: ['goldSeal', 'censerFlail', 'psalmOfWard'],
+    boss: true, maxHp: 58, power: 10, defense: 4, speed: 115, xp: 220,
+    drops: ['goldSeal', 'vestmentOfTheChoir', 'psalmOfWard'],
     entrance: 'The singing stops. This is much worse.',
   },
 
   // -- The Empty Tomb: quiet, personal ---------------------------------------
   aDoubt: {
     name: 'a doubt', glyph: 'g', color: 'mythic',
-    weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130,
+    weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130, xp: 38,
   },
   pilgrimHusk: {
     name: 'pilgrim husk', glyph: 'P', color: 'monsterWeak',
-    weight: 9, maxHp: 22, power: 8, defense: 2, speed: 100,
+    weight: 9, maxHp: 22, power: 8, defense: 2, speed: 100, xp: 40,
   },
   sepulchreWorm: {
     name: 'sepulchre worm', glyph: 'W', color: 'monsterTough',
-    weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90,
+    weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90, xp: 58,
   },
   whatYouCameFor: {
     name: 'What You Came For', glyph: '&', color: 'boss',
-    boss: true, maxHp: 90, power: 12, defense: 5, speed: 110,
+    boss: true, maxHp: 84, power: 12, defense: 5, speed: 110, xp: 400,
     drops: ['theRelic'],
     entrance: 'It is smaller than the songs implied. It knows your name, and both of the others.',
   },
@@ -1184,7 +1364,13 @@ const THEME = {
     boss: '#e0b25c',
     corpse: '#5c4340',
     item: '#7fa8c9',
+    // Rarity reads as colour before it reads as numbers.
+    gearCommon: '#9a8f7a',
+    gearUncommon: '#6f9fc4',
+    gearRare: '#a888d4',
+    gearSacred: '#e0b25c',
     gear: '#b9a06a',
+    xp: '#8fbf6f',
     seal: '#e0b25c',
 
     text: '#cfc7b8',
@@ -1197,6 +1383,13 @@ const THEME = {
 
   strings: {
     death: 'You die. The crusade files you under martyr and continues without you.',
+    levelUp: [
+      'Something in you hardens.',
+      'You have done this enough times to be good at it.',
+      'The crusade notes your progress and revises its expectations.',
+      'You stop flinching first.',
+      'Whatever this is making of you, it is nearly finished.',
+    ],
     noStairs: 'No way down here.',
     sealed: (boss) => 'The gate is sealed. ' + boss + ' keeps the seal.',
     unsealed: 'The seal turns. Somewhere below, a gate remembers how to open.',
@@ -1208,6 +1401,13 @@ const THEME = {
 // ==== src/game/game.js =====================
 const ACT_COST = 100;
 const MAX_LOG = 200;
+
+// Something else comes down the corridor every so often. Without wanderers,
+// regeneration makes health free: clear a floor, rest to full, repeat. This is
+// what puts a price on standing still, and it is why resting is a decision
+// rather than a formality.
+const WANDER_EVERY = 45;
+const WANDER_MIN_DISTANCE = 12;
 
 // The Game owns all mutable state and knows nothing about the DOM, which is
 // what lets tests/smoke.mjs drive full crusades headlessly under node.
@@ -1250,6 +1450,7 @@ class Game {
     this.player.y = start.cy;
     this.level.add(this.player);
 
+    this.wanderers = 0;
     this.setUpGate(depth);
     this.populate(depth);
     this.summonTheRemembered(depth);
@@ -1295,18 +1496,23 @@ class Game {
     const monsters = monsterTable(this.region);
     const relics = itemTable(depth);
     const rooms = this.level.rooms.slice(1); // room 0 is the player's one safe breath
+    if (!rooms.length) return;
 
-    for (const room of rooms) {
-      const count = boss ? this.rng.int(0, 1) : this.rng.int(0, 2);
-      for (let i = 0; i < count; i++) {
-        const spot = this.freeSpotInRoom(room);
-        if (spot) this.level.add(makeMonster(this.rng.weighted(monsters), spot.x, spot.y));
-      }
+    // A budget for the whole floor, not dice per room: room count is whatever
+    // mapgen happened to fit, and letting it set the population made shallow
+    // floors unsurvivable.
+    const monsterCount = boss
+      ? 2 + Math.floor(depth / 4)
+      : 3 + Math.round(depth * 0.8);
+    for (let i = 0; i < monsterCount; i++) {
+      const spot = this.freeSpotInRoom(this.rng.pick(rooms));
+      if (spot) this.level.add(makeMonster(this.rng.weighted(monsters), spot.x, spot.y));
+    }
 
-      if (this.rng.chance(0.4) && relics.length) {
-        const spot = this.freeSpotInRoom(room);
-        if (spot) this.level.add(makeItem(this.rng.weighted(relics), spot.x, spot.y));
-      }
+    const relicCount = relics.length ? this.rng.int(2, 4) : 0;
+    for (let i = 0; i < relicCount; i++) {
+      const spot = this.freeSpotInRoom(this.rng.pick(rooms));
+      if (spot) this.level.add(makeItem(this.rng.weighted(relics), spot.x, spot.y));
     }
 
     if (boss) this.placeBoss();
@@ -1410,6 +1616,10 @@ class Game {
     this.memorial.record({
       name: this.crusaderName,
       depth: this.level.depth,
+      level: this.player.level,
+      power: this.player.power,
+      defense: this.player.defense,
+      maxHp: this.player.maxHp,
       region: this.region.name,
       killedBy,
       turn: this.turn,
@@ -1432,6 +1642,8 @@ class Game {
     this.player.energy -= ACT_COST;
     this.turn++;
     tickStatuses(this, this.player);
+    tickRegeneration(this.player);
+    this.maybeWander();
     this.runMonsterTurns();
     this._distCache = null;
 
@@ -1472,6 +1684,29 @@ class Game {
     }
   }
 
+  /**
+   * Send something down the corridor, out of sight and far enough away that it
+   * has to arrive rather than appear. Capped per floor so a slow crusader is
+   * pressured, not buried.
+   */
+  maybeWander() {
+    if (this.turn === 0 || this.turn % WANDER_EVERY !== 0) return;
+    if (this.wanderers >= 2 + Math.floor(this.level.depth / 3)) return;
+
+    const table = monsterTable(this.region);
+    for (let tries = 0; tries < 60; tries++) {
+      const spot = this.randomOpenTile();
+      if (!spot) return;
+      if (this.level.visible.get(spot.x, spot.y)) continue;
+      if (chebyshev(spot.x, spot.y, this.player.x, this.player.y) < WANDER_MIN_DISTANCE) continue;
+
+      this.level.add(makeMonster(this.rng.weighted(table), spot.x, spot.y));
+      this.wanderers++;
+      this.log('Something else is down here with you.', 'textDim');
+      return;
+    }
+  }
+
   /** Distance-to-player map, rebuilt at most once per scheduler tick. */
   playerDistanceMap() {
     if (!this._distCache) {
@@ -1493,7 +1728,7 @@ class Game {
   }
 
   seals() {
-    return this.player.inventory.filter((i) => i.item?.seal);
+    return this.player.seals;
   }
 
   // -- message log ----------------------------------------------------------
@@ -1532,7 +1767,7 @@ function applyEffect(game, user, effect) {
         return true;
       }
       game.log('One held note breaks over the ' + target.name + '.', 'mythic');
-      damage(game, target, effect.amount);
+      damage(game, target, effect.amount, user);
       return true;
     }
 
@@ -1576,6 +1811,8 @@ function nearestVisible(game, from, range) {
 }
 
 // ==== src/game/actions.js ==================
+const MAX_PACK = 9;
+
 // Every action returns true if it consumed the actor's turn. Actions that fail
 // for a reason the player could have known (walking into a wall) return false,
 // so a misclick never costs a turn -- monsters do not get a free hit from it.
@@ -1618,22 +1855,53 @@ function pickUp(game, actor) {
     game.log('Nothing here worth carrying.', 'textDim');
     return false;
   }
-  if (actor.inventory.length >= 9) {
-    game.log('Your pack is full. The crusade did not budget for this.', 'textDim');
+
+  const item = items[0];
+
+  // Seals and the Relic never occupy pack space. They are the way forward, and
+  // a full pack must never be able to strand a crusader on a sealed floor with
+  // the seal lying at their feet.
+  if (item.item.victory) {
+    game.level.remove(item);
+    game.log('Taken: ' + item.name + '.', 'notable');
+    if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+    game.claimVictory();
+    return true;
+  }
+
+  if (item.item.seal) {
+    game.level.remove(item);
+    actor.seals.push(item);
+    game.log('Taken: ' + item.name + '.', 'notable');
+    if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+    game.tryUnseal(item);
+    return true;
+  }
+
+  if (actor.inventory.length >= MAX_PACK) {
+    game.log('Your pack is full. The crusade did not budget for this. [x] to drop.', 'textDim');
     return false;
   }
 
-  const item = items[0];
   game.level.remove(item);
   actor.inventory.push(item);
   game.log('Taken: ' + item.name + '.', 'notable');
   if (item.item.flavour) game.log(item.item.flavour, 'textDim');
+  return true;
+}
 
-  // Two things happen on pickup rather than on use: seals open gates, and the
-  // Relic ends the crusade.
-  if (item.item.victory) game.claimVictory();
-  else game.tryUnseal(item);
-
+/** Put something down. The pack is small, so this is a real decision. */
+function dropItem(game, actor, index) {
+  const item = actor.inventory[index];
+  if (!item) {
+    game.log('Nothing in that slot.', 'textDim');
+    return false;
+  }
+  actor.inventory.splice(index, 1);
+  item.x = actor.x;
+  item.y = actor.y;
+  game.level.add(item);
+  game.log('You set down the ' + item.name + '.', 'textDim');
   return true;
 }
 
@@ -1691,7 +1959,7 @@ function equipItem(game, actor, index) {
 function unequip(game, actor, slot) {
   const item = actor.equipment[slot];
   if (!item) return false;
-  if (actor.inventory.length >= 9) {
+  if (actor.inventory.length >= MAX_PACK) {
     game.log('No room in the pack for it.', 'textDim');
     return false;
   }
@@ -1839,6 +2107,7 @@ function keyToIntent(event) {
   if (/^[1-9]$/.test(key)) return { type: 'use', index: Number(key) - 1 };
   if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
+  if (key === 'x') return { type: 'drop' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -1850,6 +2119,7 @@ const HELP = [
   ['wait', 'space'],
   ['take', 'g'],
   ['use / wear', '1-9'],
+  ['drop', 'x then 1-9'],
   ['descend', '>'],
   ['restart', 'r'],
 ];
@@ -1862,7 +2132,8 @@ class Panel {
     this.theme = theme;
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
-      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader']) {
+      'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader',
+      'level', 'xp-fill', 'xp-text']) {
       this.el[id] = root.querySelector('#' + id);
     }
 
@@ -1888,6 +2159,12 @@ class Panel {
     this.el['hp-fill'].style.background =
       ratio > 0.5 ? colors.good : ratio > 0.25 ? colors.notable : colors.bad;
     this.el['hp-text'].textContent = Math.max(0, p.hp) + ' / ' + p.maxHp;
+
+    const need = xpToNext(p.level);
+    this.el.level.textContent = 'Level ' + p.level;
+    this.el['xp-fill'].style.width = (100 * Math.min(1, p.xp / need)).toFixed(1) + '%';
+    this.el['xp-fill'].style.background = colors.xp;
+    this.el['xp-text'].textContent = p.xp + ' / ' + need + ' xp';
     // Show the numbers gear actually produces, not the naked ones.
     const speed = effectiveSpeed(p);
     this.el.stats.innerHTML =
@@ -1900,17 +2177,20 @@ class Panel {
         + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>')
       .join(' ');
 
-    const carried = p.inventory.filter((i) => !i.item?.seal);
-    this.el.inventory.innerHTML = carried.length
-      ? p.inventory.map((item, i) => item.item?.seal ? '' :
-        '<li><kbd>' + (i + 1) + '</kbd> ' + escapeHtml(item.name) + '</li>').join('')
+    this.el.inventory.innerHTML = p.inventory.length
+      ? p.inventory.map((item, i) => {
+        const color = colors[item.color] ?? colors.text;
+        return '<li><kbd>' + (i + 1) + '</kbd> '
+          + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span></li>';
+      }).join('')
       : '<li class="empty">(empty)</li>';
 
     const SLOTS = [['weapon', 'held'], ['shield', 'shield'], ['armour', 'worn']];
     this.el.worn.innerHTML = SLOTS.map(([slot, label]) => {
       const item = p.equipment?.[slot];
       const value = item
-        ? '<span style="color:' + colors.gear + '">' + escapeHtml(item.name) + '</span>'
+        ? '<span style="color:' + (colors[item.color] ?? colors.gear) + '">'
+          + escapeHtml(item.name) + '</span>'
         : '<span class="empty">—</span>';
       return '<li><span class="slot">' + label + '</span>' + value + '</li>';
     }).join('');
@@ -1956,8 +2236,11 @@ const panel = new Panel(document, THEME);
 // One memorial for the whole browser: it outlives every run, which is the point.
 const memorial = new Memorial(browserStorage());
 let game;
+// `x` arms a drop; the next slot key resolves it. Anything else cancels.
+let pendingDrop = false;
 
 function newGame(seed) {
+  pendingDrop = false;
   game = new Game({ seed, theme: THEME, memorial });
   renderer.resize(game.level.width, game.level.height);
   redraw();
@@ -1972,7 +2255,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
 
 newGame();
 
@@ -1983,12 +2266,23 @@ globalThis.document?.fonts?.ready.then(redraw);
   }
   if (game.state !== 'playing') return;
 
+  const wasPendingDrop = pendingDrop;
+  pendingDrop = false;
+
   let acted = false;
   switch (intent.type) {
     case 'move': acted = moveOrAttack(game, game.player, intent.dx, intent.dy); break;
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
-    case 'use': acted = useItem(game, game.player, intent.index); break;
+    case 'use':
+      acted = wasPendingDrop
+        ? dropItem(game, game.player, intent.index)
+        : useItem(game, game.player, intent.index);
+      break;
+    case 'drop':
+      if (!game.player.inventory.length) game.log('Your pack is already empty.', 'textDim');
+      else { pendingDrop = true; game.log('Drop which? [1-9]', 'textDim'); }
+      break;
     case 'descend': acted = descend(game); break;
   }
 
@@ -2006,7 +2300,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
 
 newGame();
 </script>
