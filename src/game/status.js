@@ -62,6 +62,17 @@ function heirloomFor(item, field) {
   return 0;
 }
 
+/**
+ * Permanent advantages from merging duplicates. Derived, never written into a
+ * base stat, so they belong to this crusader alone -- a revenant rebuilt from
+ * the memorial has none of them.
+ */
+export function mergeBonus(entity, stat) {
+  if (!entity.merges?.length) return 0;
+  return entity.merges.reduce(
+    (sum, merge) => sum + (merge.boon.stat === stat ? merge.boon.amount : 0), 0);
+}
+
 // -- Traits ------------------------------------------------------------------
 
 export function traitsOf(entity) {
@@ -100,11 +111,11 @@ export function tickBlock(entity) {
 }
 
 export function effectivePower(entity) {
-  return entity.power + gearBonus(entity, 'power');
+  return entity.power + gearBonus(entity, 'power') + mergeBonus(entity, 'power');
 }
 
 export function effectiveDefense(entity) {
-  return entity.defense + gearBonus(entity, 'defense')
+  return entity.defense + gearBonus(entity, 'defense') + mergeBonus(entity, 'defense')
     + statusAmount(entity, 'ward') + sanctuaryBonus(entity);
 }
 
@@ -114,7 +125,8 @@ export function effectiveDefense(entity) {
  * for a turn that cannot arrive.
  */
 export function effectiveSpeed(entity) {
-  return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
+  return Math.max(MIN_SPEED,
+    entity.speed + gearBonus(entity, 'speed') + mergeBonus(entity, 'speed'));
 }
 
 /**

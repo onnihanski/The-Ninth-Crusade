@@ -97,9 +97,13 @@ function retreat(game, monster) {
 }
 
 function moveIfOpen(game, monster, [dx, dy]) {
-  if (!game.level.isOpen(monster.x + dx, monster.y + dy)) return false;
-  monster.x += dx;
-  monster.y += dy;
+  const x = monster.x + dx;
+  const y = monster.y + dy;
+  if (!game.level.isOpen(x, y)) return false;
+  // A boss belongs to its room and does not follow you out of it.
+  if (monster.boss && game.level.bossRoom && !game.level.inArena(x, y)) return false;
+  monster.x = x;
+  monster.y = y;
   return true;
 }
 

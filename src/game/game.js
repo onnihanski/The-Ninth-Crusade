@@ -46,6 +46,7 @@ export class Game {
     // per run: the story is told again to the next crusader, because it is the
     // crusade telling it and the crusade repeats itself.
     this.storyQueue = [];
+    this.prompt = null;
     this.chaptersSeen = new Set();
     this.loreSeen = new Set();
     this.runRecorded = false;
@@ -68,7 +69,10 @@ export class Game {
 
   buildLevel(depth) {
     this.region = regionForDepth(depth);
-    this.level = new Level(this.rng, this.width, this.height, depth);
+    this.level = new Level(this.rng, this.width, this.height, depth, {
+      region: this.region,
+      bossFloor: isBossDepth(depth),
+    });
     this.level.region = this.region;
 
     const start = this.level.rooms[0];
@@ -77,6 +81,7 @@ export class Game {
     this.level.add(this.player);
 
     this.wanderers = 0;
+    this.prompt = null;
     this.echoes = [];              // a note does not carry between floors
     this.setUpGate(depth);
     this.populate(depth);
@@ -147,11 +152,11 @@ export class Game {
     if (boss) this.placeBoss();
   }
 
-  /** The boss stands on the way out, because of course it does. */
+  /** The boss waits in its own room, alone, on the way out. */
   placeBoss() {
     const spec = { key: this.region.boss, ...MONSTERS[this.region.boss] };
-    const lastRoom = this.level.rooms[this.level.rooms.length - 1];
-    const spot = this.freeSpotInRoom(lastRoom) ?? this.freeSpotInRoom(this.level.rooms[1]);
+    const arena = this.level.bossRoom ?? this.level.rooms[this.level.rooms.length - 1];
+    const spot = this.freeSpotInRoom(arena) ?? this.freeSpotInRoom(this.level.rooms[0]);
     if (!spot) return;
     const boss = makeMonster(spec, spot.x, spot.y);
     prepareBoss(this, boss);
@@ -182,19 +187,31 @@ export class Game {
   }
 
   freeSpotInRoom(room) {
+    const isArena = room === this.level.bossRoom;
     for (let tries = 0; tries < 20; tries++) {
       const x = this.rng.int(room.x, room.x + room.w - 1);
       const y = this.rng.int(room.y, room.y + room.h - 1);
-      if (this.level.isOpen(x, y)) return { x, y };
+      if (!this.level.isOpen(x, y)) continue;
+      // Nothing but the boss is placed inside a sealed arena.
+      if (!isArena && this.level.isSealedOff(x, y)) continue;
+      return { x, y };
     }
     return null;
   }
 
+  /**
+   * Somewhere legal to put a thing. While a boss fight is sealed the arena is
+   * the only legal ground -- otherwise a blink would step the player straight
+   * out through a locked door.
+   */
   randomOpenTile() {
+    const confined = this.level.doorLocked;
     for (let tries = 0; tries < 400; tries++) {
       const x = this.rng.int(1, this.level.width - 2);
       const y = this.rng.int(1, this.level.height - 2);
-      if (this.level.isOpen(x, y)) return { x, y };
+      if (!this.level.isOpen(x, y)) continue;
+      if (confined !== this.level.inArena(x, y)) continue;
+      return { x, y };
     }
     return null;
   }
@@ -204,6 +221,7 @@ export class Game {
   onBossDefeated(boss) {
     if (boss.entranceShown !== undefined) delete boss.entranceShown;
     this.log('The way is no longer being argued about.', 'mythic');
+    this.unlockArena();
   }
 
   /** Called when a seal reaches the pack. Opens this floor's gate, if it fits. */
@@ -309,9 +327,9 @@ export class Game {
    * arriving on the floor, so the story lands where the obstacle is.
    */
   announceGate() {
-    if (!this.level.sealed || !this.level.stairs) return;
+    if (!this.level.sealed || !this.level.door) return;
     if (this.chaptersSeen.has(this.region.key)) return;
-    if (!this.level.visible.get(this.level.stairs.x, this.level.stairs.y)) return;
+    if (!this.level.visible.get(this.level.door.x, this.level.door.y)) return;
 
     const chapter = GATE_CHAPTERS[this.region.key];
     if (!chapter) return;
@@ -338,6 +356,88 @@ export class Game {
         });
       }
     }
+  }
+
+  /** The prompt shown at a boss door. Answered by enterArena/declineArena. */
+  askToEnter() {
+    if (this.prompt) return;
+    this.prompt = {
+      kind: 'enterArena',
+      title: 'The door is shut.',
+      question: 'Are you sure you want to enter?',
+      note: 'It will not open again until whatever is behind it is finished.',
+    };
+  }
+
+  declineArena() {
+    this.prompt = null;
+    this.log('You leave the door shut, for now.', 'textDim');
+  }
+
+  /** Step through, bar the door, and meet what is inside. */
+  enterArena() {
+    this.prompt = null;
+    const door = this.level.door;
+    const arena = this.level.bossRoom;
+    if (!door || !arena) return false;
+
+    const inside = this.insideDoor(door, arena);
+    if (!inside) return false;
+
+    this.player.x = inside.x;
+    this.player.y = inside.y;
+    if (this.level.arenaHolds()) {
+      this.level.tiles.set(door.x, door.y, Tiles.doorLocked);
+      this.level.doorLocked = true;
+      this.log('The door shuts behind you.', 'bad');
+    }
+    this.level.updateFov(this.player, this.theme.fovRadius);
+
+    const key = this.region.boss;
+    const lore = BOSS_LORE[key];
+    if (lore && !this.loreSeen.has(key)) {
+      this.loreSeen.add(key);
+      this.tellStory({
+        kind: 'boss', title: lore.title, lines: lore.lines, mechanic: lore.mechanic,
+      });
+    }
+    for (const e of this.level.entities) if (e.boss) e.announced = true;
+    return true;
+  }
+
+  /**
+   * Where the player lands on stepping through. Normally the tile straight
+   * inward, but a boss standing in the doorway must not make the door
+   * unopenable -- fall back to the nearest free ground inside.
+   */
+  insideDoor(door, arena) {
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const x = door.x + dx;
+      const y = door.y + dy;
+      if (this.level.inArena(x, y) && this.level.isOpen(x, y)) return { x, y };
+    }
+
+    let best = null;
+    let bestDistance = Infinity;
+    for (let y = arena.y; y < arena.y + arena.h; y++) {
+      for (let x = arena.x; x < arena.x + arena.w; x++) {
+        if (!this.level.isOpen(x, y)) continue;
+        const distance = Math.abs(x - door.x) + Math.abs(y - door.y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Killing the boss unbars the door. */
+  unlockArena() {
+    if (!this.level.doorLocked || !this.level.door) return;
+    this.level.doorLocked = false;
+    this.level.tiles.set(this.level.door.x, this.level.door.y, Tiles.door);
+    this.log('The door gives, and swings open.', 'good');
   }
 
   tellStory(card) {

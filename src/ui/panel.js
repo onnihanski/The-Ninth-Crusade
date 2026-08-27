@@ -4,6 +4,7 @@ import {
   sanctuaryBonus, hasTrait,
 } from '../game/status.js';
 import { heirloomBonus } from '../data/traits.js';
+import { MERGE_LABEL } from '../data/items.js';
 import { xpToNext } from '../game/progress.js';
 import { ITEMS, SLOTS, itemCategory, describeItem } from '../data/items.js';
 
@@ -75,6 +76,10 @@ export class Panel {
       stances.push(p.blockCooldown > 0
         ? '<span class="tag" style="color:' + colors.bad + '">shield down (' + p.blockCooldown + ')</span>'
         : '<span class="tag" style="color:' + colors.good + '">shield up</span>');
+    }
+    for (const merge of p.merges ?? []) {
+      stances.push('<span class="tag" style="color:' + colors.notable + '">'
+        + escapeHtml(MERGE_LABEL[merge.boon.stat]) + ' +' + merge.boon.amount + '</span>');
     }
     this.el.statuses.innerHTML = stances.join(' ');
 

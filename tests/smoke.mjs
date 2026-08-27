@@ -2,7 +2,10 @@
 // Catches what is painful to find by clicking around a browser -- scheduler
 // deadlocks, unreachable gates, AI walking into walls, memorial corruption.
 import { Game } from '../src/game/game.js';
-import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, fire, descend } from '../src/game/actions.js';
+import {
+  moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, fire, descend,
+  mergeDuplicates,
+} from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
 import { makeItem, makeMonster, makeRevenant } from '../src/game/entity.js';
 import { attack } from '../src/game/combat.js';
@@ -10,19 +13,22 @@ import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.j
 import { Tiles } from '../src/world/tiles.js';
 import {
   effectivePower, effectiveDefense, effectiveSpeed, rangedProfile, canFire,
-  hasTrait, sanctuaryBonus, canBlock, tickBlock,
+  hasTrait, sanctuaryBonus, canBlock, tickBlock, mergeBonus,
 } from '../src/game/status.js';
 import { TRAITS, heirloomBonus } from '../src/data/traits.js';
+import { regenInterval } from '../src/game/progress.js';
 import { attunedAmount } from '../src/game/effects.js';
 import { keyToIntent } from '../src/ui/input.js';
 import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
 import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
+import { generateLevel } from '../src/world/mapgen.js';
+import { RNG } from '../src/engine/rng.js';
 import { takeAiTurn } from '../src/game/ai.js';
 import { chebyshev } from '../src/engine/grid.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
-import { ITEMS, itemTable, SLOTS, itemCategory, describeItem } from '../src/data/items.js';
+import { ITEMS, itemTable, SLOTS, itemCategory, describeItem, mergeBoon } from '../src/data/items.js';
 import { gainXp } from '../src/game/progress.js';
 import { MAX_PACK } from '../src/game/actions.js';
 
@@ -40,8 +46,19 @@ function stepToward(g, tx, ty) {
   if (dist[g.player.y * g.level.width + g.player.x] === UNREACHABLE) return false;
   const move = stepDownhill(dist, g.level.width, g.level.height, g.player.x, g.player.y, g.rng);
   if (!move) return false;
+
   // moveOrAttack swings at anything standing in the way, which is what we want.
-  if (moveOrAttack(g, g.player, move[0], move[1]) && g.state === 'playing') g.playerActed();
+  const acted = moveOrAttack(g, g.player, move[0], move[1]);
+
+  // Walking into a boss door asks a question instead of taking a step. A
+  // crusader who came this far says yes.
+  if (!acted && g.prompt?.kind === 'enterArena') {
+    g.enterArena();
+    while (g.pendingStory()) g.dismissStory();
+    return true;
+  }
+
+  if (acted && g.state === 'playing') g.playerActed();
   return true;
 }
 
@@ -463,21 +480,31 @@ section('the dead keep their kit');
   barefootGame.buildLevel(5);
   const barefoot = barefootGame.level.entities.find((e) => e.revenant);
 
-  check('the revenant hits harder for the weapon',
-    revenant.power === barefoot.power + ITEMS.censerFlail.equip.power);
-  check('the revenant is tougher for the armour',
-    revenant.defense === barefoot.defense + ITEMS.mailHauberk.equip.defense);
-  check('the revenant is slowed by it, as you were',
-    revenant.speed === 100 + ITEMS.censerFlail.equip.speed + ITEMS.mailHauberk.equip.speed);
+  // The kit drops from them with every point it ever had, and lends them
+  // nothing while they carry it. A predecessor who died in good armour used to
+  // come back as a wall on an early floor, long before the crusader meeting
+  // them could field anything comparable.
+  check('a revenant gains no power from the weapon it carries',
+    revenant.power === barefoot.power);
+  check('a revenant gains no defense from the armour it carries',
+    revenant.defense === barefoot.defense);
+  check('and is not slowed by the weight either',
+    revenant.speed === 100 && revenant.speed === barefoot.speed);
   const dropKeys = revenant.drops.map((d) => d.key);
   check('the revenant drops the whole kit',
     dropKeys.includes('censerFlail') && dropKeys.includes('mailHauberk'));
 
   invincible(second);
   killEntity(second, revenant);
-  const onFloor = second.level.entities.filter((e) => e.item).map((e) => e.item.key);
+  const onFloor = second.level.entities.filter((e) => e.item);
+  const onFloorKeys = onFloor.map((e) => e.item.key);
   check('your old gear is recoverable off your old body',
-    onFloor.includes('censerFlail') && onFloor.includes('mailHauberk'));
+    onFloorKeys.includes('censerFlail') && onFloorKeys.includes('mailHauberk'));
+  check('and the gear itself lost none of its power in the process', (() => {
+    const flail = onFloor.find((e) => e.item.key === 'censerFlail');
+    return flail.item.equip.power === ITEMS.censerFlail.equip.power
+      && flail.item.equip.speed === ITEMS.censerFlail.equip.speed;
+  })());
 }
 
 // --- experience and levels -------------------------------------------------
@@ -1425,6 +1452,246 @@ section('naming yourself');
     const revenant = next.level.entities.find((e) => e.revenant);
     return memorial.entries[0].name === 'Onni the Unhurried'
       && revenant.name.includes('Onni the Unhurried');
+  })());
+}
+
+// --- merging ---------------------------------------------------------------
+section('merging duplicates');
+{
+  const g = new Game({ seed: 5001, memorial: new Memorial(memoryStorage()) });
+  const give = (key) => g.player.inventory.push(makeItem({ key, ...ITEMS[key] }, 0, 0));
+
+  give('armingSword');
+  check('a single item cannot be merged with itself', mergeDuplicates(g, g.player) === false);
+
+  give('armingSword');
+  const power = effectivePower(g.player);
+  check('two of a kind press together', mergeDuplicates(g, g.player) === true);
+  check('both copies are spent', g.player.inventory.length === 0);
+  check('and the crusader keeps the advantage', effectivePower(g.player) === power + 1);
+  check('which is recorded as a merge', g.player.merges.length === 1);
+
+  give('gambeson'); give('gambeson');
+  const defense = effectiveDefense(g.player);
+  mergeDuplicates(g, g.player);
+  check('armour merges into defense', effectiveDefense(g.player) === defense + 1);
+
+  const beforeRegen = regenInterval(g.player);
+  give('reliquaryPhial'); give('reliquaryPhial');
+  mergeDuplicates(g, g.player);
+  check('phials merge into faster recovery', regenInterval(g.player) < beforeRegen);
+
+  check('merges stack', (() => {
+    const h = new Game({ seed: 5002, memorial: new Memorial(memoryStorage()) });
+    for (let i = 0; i < 4; i++) {
+      h.player.inventory.push(makeItem({ key: 'armingSword', ...ITEMS.armingSword }, 0, 0));
+    }
+    const base = effectivePower(h.player);
+    mergeDuplicates(h, h.player);
+    mergeDuplicates(h, h.player);
+    return effectivePower(h.player) === base + 2 && h.player.merges.length === 2;
+  })());
+
+  check('nothing that matters can be merged away',
+    mergeBoon(ITEMS.brassSeal) === null && mergeBoon(ITEMS.theRelic) === null);
+
+  check('a merge spends the plain copies before an heirloom', (() => {
+    const h = new Game({ seed: 5003, memorial: new Memorial(memoryStorage()) });
+    const heirloom = makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0);
+    heirloom.item.heirloom = { of: 'Pilgrim Test', deepest: 9, marks: 1 };
+    h.player.inventory.push(
+      makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0),
+      heirloom,
+      makeItem({ key: 'censerFlail', ...ITEMS.censerFlail }, 0, 0),
+    );
+    mergeDuplicates(h, h.player);
+    return h.player.inventory.length === 1
+      && h.player.inventory[0].item.heirloom?.of === 'Pilgrim Test';
+  })());
+}
+
+section('merges belong to the living');
+{
+  // Every boon is a derived stat, never a base one, so nothing the memorial
+  // records can carry a merge forward into something that fights you.
+  const memorial = new Memorial(memoryStorage());
+  const run = new Game({ seed: 5010, memorial });
+  run.buildLevel(5);
+  for (let i = 0; i < 6; i++) {
+    run.player.inventory.push(makeItem({ key: 'armingSword', ...ITEMS.armingSword }, 0, 0));
+  }
+  mergeDuplicates(run, run.player);
+  mergeDuplicates(run, run.player);
+  mergeDuplicates(run, run.player);
+  const basePower = run.player.power;
+  check('merging never touches the base stat', effectivePower(run.player) > basePower);
+
+  run.finishRun('a bonepicker');
+  check('the memorial records the base stat, not the merged one',
+    memorial.entries[0].power === basePower);
+
+  const next = new Game({ seed: 5011, memorial });
+  next.buildLevel(5);
+  const revenant = next.level.entities.find((e) => e.revenant);
+  check('a revenant inherits no merges',
+    !revenant.merges?.length && mergeBonus(revenant, 'power') === 0);
+  check('and is no stronger for them', revenant.power === basePower);
+}
+
+// --- region silhouettes ----------------------------------------------------
+section('every region is shaped differently');
+{
+  const survey = (region) => {
+    let rooms = 0;
+    let open = 0;
+    let biggest = 0;
+    for (let seed = 0; seed < 25; seed++) {
+      const level = generateLevel(new RNG(seed * 31 + 7), 72, 34, { region });
+      rooms += level.rooms.length;
+      open += level.tiles.cells.filter((t) => t.walkable).length;
+      biggest += Math.max(...level.rooms.map((r) => r.w * r.h));
+    }
+    return { rooms: rooms / 25, open: open / 25, biggest: biggest / 25 };
+  };
+
+  const shapes = Object.fromEntries(REGIONS.map((r) => [r.key, survey(r)]));
+
+  check('the catacombs are made of many small chambers',
+    shapes.reliquary.rooms > shapes.siegeYards.rooms
+    && shapes.reliquary.biggest < shapes.siegeYards.biggest);
+  check('the choir is a few enormous halls',
+    shapes.choir.rooms < shapes.siegeYards.rooms
+    && shapes.choir.biggest > shapes.siegeYards.biggest * 1.5);
+  check('the empty tomb is open cavern, not rooms',
+    shapes.emptyTomb.open > shapes.siegeYards.open * 1.5);
+  check('no two regions produce the same silhouette', (() => {
+    const signatures = Object.values(shapes)
+      .map((s) => Math.round(s.rooms) + ':' + Math.round(s.open / 50));
+    return new Set(signatures).size === signatures.length;
+  })());
+
+  check('all four regions generate fully connected floors', (() => {
+    for (const region of REGIONS) {
+      for (let seed = 0; seed < 40; seed++) {
+        const level = generateLevel(new RNG(seed * 17 + 3), 72, 34, { region });
+        const start = level.rooms[0];
+        const dist = dijkstraMap(72, 34, [[start.cx, start.cy]],
+          (x, y) => level.tiles.get(x, y).walkable);
+        if (level.rooms.some((r) => dist[r.cy * 72 + r.cx] >= UNREACHABLE)) return false;
+        if (dist[level.stairs.y * 72 + level.stairs.x] >= UNREACHABLE) return false;
+      }
+    }
+    return true;
+  })());
+}
+
+// --- boss arenas -----------------------------------------------------------
+section('boss arenas');
+{
+  const ringOf = (room) => {
+    const ring = [];
+    for (let x = room.x - 1; x <= room.x + room.w; x++) {
+      ring.push([x, room.y - 1], [x, room.y + room.h]);
+    }
+    for (let y = room.y; y < room.y + room.h; y++) {
+      ring.push([room.x - 1, y], [room.x + room.w, y]);
+    }
+    return ring;
+  };
+
+  check('every boss floor of every region has a sealed arena', (() => {
+    for (const region of REGIONS) {
+      for (let seed = 0; seed < 20; seed++) {
+        const level = generateLevel(new RNG(seed * 13 + 5), 72, 34,
+          { region, bossFloor: true });
+        if (!level.bossRoom || !level.door) return false;
+
+        // Exactly one way in, however the corridor arrived.
+        const ways = ringOf(level.bossRoom)
+          .filter(([x, y]) => level.tiles.get(x, y)?.walkable).length;
+        if (ways !== 1) return false;
+
+        const s = level.stairs;
+        const inside = s.x >= level.bossRoom.x && s.x < level.bossRoom.x + level.bossRoom.w
+          && s.y >= level.bossRoom.y && s.y < level.bossRoom.y + level.bossRoom.h;
+        if (!inside) return false;
+      }
+    }
+    return true;
+  })());
+
+  const g = invincible(new Game({ seed: 5100, memorial: new Memorial(memoryStorage()) }));
+  g.buildLevel(3);
+  const boss = g.level.entities.find((e) => e.boss);
+  check('the boss is inside the arena', g.level.inArena(boss.x, boss.y));
+  check('nothing else is in there with it',
+    g.level.entities.filter((e) => e.ai && !e.boss && g.level.inArena(e.x, e.y)).length === 0);
+  check('and nor is any loot',
+    g.level.entities.filter((e) => e.item && g.level.inArena(e.x, e.y)).length === 0);
+
+  const door = g.level.door;
+  const outside = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+    .map(([dx, dy]) => ({ x: door.x + dx, y: door.y + dy }))
+    .find((p) => !g.level.inArena(p.x, p.y) && g.level.isWalkable(p.x, p.y));
+  g.player.x = outside.x;
+  g.player.y = outside.y;
+  const turnBefore = g.turn;
+  const stepped = moveOrAttack(g, g.player, door.x - outside.x, door.y - outside.y);
+  check('walking into the door asks first', stepped === false && Boolean(g.prompt));
+  check('and costs no turn', g.turn === turnBefore);
+  check('the question is the one a player would want asked',
+    g.prompt.question.includes('Are you sure you want to enter'));
+
+  g.declineArena();
+  check('saying no leaves you outside',
+    !g.prompt && !g.level.inArena(g.player.x, g.player.y) && !g.level.doorLocked);
+
+  moveOrAttack(g, g.player, door.x - g.player.x, door.y - g.player.y);
+  check('saying yes puts you inside',
+    g.enterArena() === true && g.level.inArena(g.player.x, g.player.y));
+  check('and bars the door behind you',
+    g.level.doorLocked && !g.level.tiles.get(door.x, door.y).walkable);
+  check('the boss tells you what it is only once you are committed',
+    g.pendingStory()?.title === BOSS_LORE.herald.title);
+  while (g.pendingStory()) g.dismissStory();
+
+  check('there is no walking back out', (() => {
+    const dx = Math.sign(door.x - g.player.x);
+    const dy = Math.sign(door.y - g.player.y);
+    g.player.x = door.x - dx;
+    g.player.y = door.y - dy;
+    return moveOrAttack(g, g.player, dx, dy) === false;
+  })());
+
+  check('nor blinking out', (() => {
+    for (let i = 0; i < 30; i++) {
+      const spot = g.randomOpenTile();
+      if (spot && !g.level.inArena(spot.x, spot.y)) return false;
+    }
+    return true;
+  })());
+
+  check('the boss will not follow you out either', (() => {
+    const b = g.level.entities.find((e) => e.boss && e.alive);
+    g.player.x = outside.x;
+    g.player.y = outside.y;
+    for (let i = 0; i < 60; i++) takeAiTurn(g, b);
+    return g.level.inArena(b.x, b.y);
+  })());
+
+  check('killing it opens the door', (() => {
+    const b = g.level.entities.find((e) => e.boss && e.alive);
+    damage(g, b, 99999, g.player);
+    return !g.level.doorLocked && g.level.tiles.get(door.x, door.y).walkable;
+  })());
+
+  check('and the door stops being a question', (() => {
+    // Walking back in for the loot must not ask again, nor shut behind you.
+    g.player.x = outside.x;
+    g.player.y = outside.y;
+    g.prompt = null;
+    const stepped2 = moveOrAttack(g, g.player, door.x - outside.x, door.y - outside.y);
+    return stepped2 === true && !g.prompt && !g.level.doorLocked;
   })());
 }
 

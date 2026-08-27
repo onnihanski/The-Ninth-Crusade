@@ -290,6 +290,37 @@ export function itemTable(depth) {
 
 export const SLOTS = ['weapon', 'shield', 'armour'];
 
+// ---------------------------------------------------------------------------
+// MERGING
+//
+// Carry two of anything and they can be pressed into one lasting advantage.
+// Every boon is a *derived* stat -- power, defense, speed, or how fast wounds
+// close -- and never a change to a base stat. That is deliberate: base stats
+// are what the memorial records and what a revenant is rebuilt from, so a
+// crusader's merges die with them and can never come back wearing their face.
+// ---------------------------------------------------------------------------
+const MERGE_BOONS = {
+  weapon: { stat: 'power', amount: 1, text: 'the hand remembers the weight' },
+  shield: { stat: 'defense', amount: 1, text: 'you flinch a little later' },
+  armour: { stat: 'defense', amount: 1, text: 'the fit is better than it was' },
+  heal: { stat: 'regen', amount: 4, text: 'wounds close quicker than they did' },
+  smite: { stat: 'power', amount: 1, text: 'the note stays in your hands' },
+  ward: { stat: 'defense', amount: 1, text: 'the psalm no longer needs singing' },
+  blink: { stat: 'speed', amount: 5, text: 'the floor lets go of you sooner' },
+};
+
+/** What pressing two of this item together leaves you with, or null. */
+export function mergeBoon(spec) {
+  if (!spec || spec.seal || spec.victory) return null;
+  if (spec.equip) return MERGE_BOONS[spec.equip.slot] ?? null;
+  if (spec.use) return MERGE_BOONS[spec.use.kind] ?? null;
+  return null;
+}
+
+export const MERGE_LABEL = {
+  power: 'power', defense: 'defense', speed: 'speed', regen: 'recovery',
+};
+
 /** Short label shown beside the item's name in the pack. */
 export function itemCategory(spec) {
   if (spec.seal) return 'seal';

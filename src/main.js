@@ -1,6 +1,6 @@
 import { Game } from './game/game.js';
 import {
-  moveOrAttack, wait, pickUp, useItem, dropItem, fire, descend,
+  moveOrAttack, wait, pickUp, useItem, dropItem, fire, descend, mergeDuplicates,
 } from './game/actions.js';
 import { Memorial, browserStorage } from './game/memorial.js';
 import { makeItem, makeMonster } from './game/entity.js';
@@ -23,6 +23,10 @@ const storyEl = document.getElementById('story');
 const storyTitle = document.getElementById('story-title');
 const storyLines = document.getElementById('story-lines');
 const storyMechanic = document.getElementById('story-mechanic');
+const promptEl = document.getElementById('prompt');
+const promptTitle = document.getElementById('prompt-title');
+const promptQuestion = document.getElementById('prompt-question');
+const promptNote = document.getElementById('prompt-note');
 const crusaderEl = document.getElementById('crusader');
 const renameButton = document.getElementById('rename');
 const renameInput = document.getElementById('rename-input');
@@ -91,6 +95,28 @@ renameInput.addEventListener('blur', () => finishRename(true));
 
 // -- the story card ---------------------------------------------------------
 
+function renderPrompt() {
+  const ask = game.prompt;
+  if (!ask) {
+    promptEl.hidden = true;
+    return;
+  }
+  promptTitle.textContent = ask.title;
+  promptQuestion.textContent = ask.question;
+  promptNote.textContent = ask.note ?? '';
+  promptEl.hidden = false;
+}
+
+function answerPrompt(yes) {
+  if (!game.prompt) return;
+  if (yes) game.enterArena();
+  else game.declineArena();
+  redraw();
+}
+
+document.getElementById('prompt-yes').addEventListener('click', () => answerPrompt(true));
+document.getElementById('prompt-no').addEventListener('click', () => answerPrompt(false));
+
 function renderStory() {
   const card = game.pendingStory();
   if (!card) {
@@ -131,6 +157,7 @@ function redraw() {
   renderer.draw(game);
   panel.update(game);
   renderStory();
+  renderPrompt();
   document.body.classList.toggle('over', game.state !== 'playing');
 }
 
@@ -154,6 +181,7 @@ function handleIntent(intent) {
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
     case 'fire': acted = fire(game, game.player); break;
+    case 'merge': acted = mergeDuplicates(game, game.player); break;
     case 'use':
       acted = wasPendingDrop
         ? dropItem(game, game.player, intent.index)
@@ -174,6 +202,16 @@ function handleIntent(intent) {
 window.addEventListener('keydown', (event) => {
   if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+  // A question holds the floor until it is answered.
+  if (game.prompt) {
+    const key = event.key.toLowerCase();
+    if (key === 'y' || key === 'n' || key === 'escape') {
+      event.preventDefault();
+      answerPrompt(key === 'y');
+    }
+    return;
+  }
 
   // A story card holds the floor: any key reads on, and none of them is a turn.
   if (game.pendingStory()) {

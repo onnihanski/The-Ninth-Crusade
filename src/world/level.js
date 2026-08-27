@@ -5,18 +5,39 @@ import { generateLevel } from './mapgen.js';
 
 // One dungeon floor: terrain, what the player has seen, and everything in it.
 export class Level {
-  constructor(rng, width, height, depth) {
-    const { tiles, rooms, stairs } = generateLevel(rng, width, height);
+  constructor(rng, width, height, depth, options = {}) {
+    const { tiles, rooms, stairs, bossRoom, door } =
+      generateLevel(rng, width, height, options);
     this.width = width;
     this.height = height;
     this.depth = depth;
     this.tiles = tiles;
     this.rooms = rooms;
     this.stairs = stairs;
+    this.bossRoom = bossRoom;
+    this.door = door;
+    this.doorLocked = false;
     this.entities = [];
 
     this.visible = new Grid(width, height, false);
     this.explored = new Grid(width, height, false);
+  }
+
+  /** A boss arena is only a threshold while something in it is still alive. */
+  arenaHolds() {
+    return Boolean(this.bossRoom) && this.entities.some((e) => e.boss && e.alive);
+  }
+
+  /** Inside the boss arena, if this floor has one. */
+  inArena(x, y) {
+    const room = this.bossRoom;
+    if (!room) return false;
+    return x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h;
+  }
+
+  /** The arena is a closed fight: nothing may be placed or land inside it. */
+  isSealedOff(x, y) {
+    return Boolean(this.bossRoom) && this.inArena(x, y);
   }
 
   isWalkable(x, y) {

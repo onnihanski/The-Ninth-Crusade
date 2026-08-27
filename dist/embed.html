@@ -156,8 +156,33 @@
   #seals .empty, #statuses:empty { color: var(--dim); font-size: 10px; }
   body.over #screen { filter: saturate(0.3) brightness(0.7); }
 
+  /* The boss door asks before it opens. Sits above the story card, because
+     the question has to be answered before anything else can be read. */
+  #prompt {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 12;
+    background: linear-gradient(to top, rgba(6, 6, 8, 0.98) 76%, rgba(6, 6, 8, 0));
+    padding: 26px 22px 16px;
+  }
+  #prompt[hidden] { display: none; }
+  #prompt-title {
+    margin: 0 0 6px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.09em; text-transform: uppercase; color: #c25a45;
+  }
+  #prompt-question { margin: 0 0 4px; font-size: 13px; color: var(--text); }
+  #prompt-note {
+    margin: 0 0 12px; font-size: 11px; color: var(--dim); max-width: 62ch;
+  }
+  #prompt-choices { display: flex; gap: 8px; }
+  #prompt-choices button {
+    font: inherit; font-size: 12px; padding: 6px 14px; cursor: pointer;
+    color: var(--text); background: #05070a;
+    border: 1px solid var(--line); border-radius: 4px;
+  }
+  #prompt-choices button:hover { border-color: var(--dim); }
+  #prompt-choices kbd { font-size: 10px; }
+
   #story {
-    position: absolute; left: 0; right: 0; bottom: 0;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10;
     background: linear-gradient(to top, rgba(6, 6, 8, 0.98) 78%, rgba(6, 6, 8, 0));
     padding: 26px 22px 16px;
     animation: story-in 220ms ease-out;
@@ -189,6 +214,15 @@
 <main>
   <div id="stage">
     <canvas id="screen"></canvas>
+    <div id="prompt" hidden role="alertdialog" aria-labelledby="prompt-question">
+      <h2 id="prompt-title"></h2>
+      <p id="prompt-question"></p>
+      <p id="prompt-note"></p>
+      <div id="prompt-choices">
+        <button id="prompt-yes" type="button">Yes &nbsp;<kbd>y</kbd></button>
+        <button id="prompt-no" type="button">No &nbsp;<kbd>n</kbd></button>
+      </div>
+    </div>
     <div id="story" hidden aria-live="polite">
       <h2 id="story-title"></h2>
       <div id="story-lines"></div>
@@ -514,55 +548,332 @@ const Tiles = {
   stairsDown: { key: 'stairsDown', glyph: '>', walkable: true, transparent: true },
   // Stands where the stairs will be, on every boss floor, until a seal turns it.
   sealedGate: { key: 'sealedGate', glyph: '=', walkable: true, transparent: true },
+
+  // The only way into a boss arena. Opaque on purpose: whatever is waiting in
+  // there should not be visible from the corridor.
+  door: { key: 'door', glyph: '+', walkable: true, transparent: false },
+  doorLocked: { key: 'doorLocked', glyph: '+', walkable: false, transparent: false },
 };
 
 // ==== src/world/mapgen.js ==================
-// Rooms-and-corridors generation: the Rogue original, and still the clearest
-// starting point. Try to place N non-overlapping rectangles, then join each new
-// room to the previous one with an L-shaped tunnel. Guaranteed connected,
-// because every room is linked to the one before it.
+// ---------------------------------------------------------------------------
+// Level generation, one shape per region.
 //
-// This is the obvious place to grow later: cellular-automata caves, BSP,
-// prefab vaults, a cave/room mix chosen by depth.
+// Four regions that all had the same floor plan was the game's biggest missed
+// opportunity: the palette and the monsters changed, and the place did not.
+// Each generator below owns a silhouette, and every one of them must hand back
+// a fully connected map -- that invariant is what the rest of the game leans
+// on, and the test suite checks it across sixty seeds per region.
+// ---------------------------------------------------------------------------
+
+const GENERATORS = {
+  siegeYards: siegeYards,
+  reliquary: catacombs,
+  choir: cathedral,
+  emptyTomb: caves,
+};
+
+/**
+ * @param {object} options
+ *   region     the region definition, which picks the silhouette
+ *   bossFloor  reserve and carve a sealed arena with a single door
+ */
 function generateLevel(rng, width, height, options = {}) {
-  const {
-    maxRooms = 26,
-    minRoomSize = 5,
-    maxRoomSize = 11,
-  } = options;
+  const { region, bossFloor = false } = options;
+  const build = GENERATORS[region?.key] ?? siegeYards;
+
+  // The arena is reserved before anything else is drawn, so the region
+  // generator simply never uses that ground and the arena cannot end up
+  // straddling a corridor it would have to cut.
+  const reserved = bossFloor ? reserveArena(rng, width, height) : null;
 
   const tiles = new Grid(width, height, Tiles.wall);
+  const rooms = build(rng, tiles, width, height, reserved);
+
+  if (!rooms.length) return generateLevel(rng, width, height, options);
+
+  if (!reserved) {
+    const last = rooms[rooms.length - 1];
+    tiles.set(last.cx, last.cy, Tiles.stairsDown);
+    return { tiles, rooms, stairs: { x: last.cx, y: last.cy }, bossRoom: null, door: null };
+  }
+
+  const door = openArena(tiles, reserved, rooms);
+  if (!door) return generateLevel(rng, width, height, options);
+
+  tiles.set(reserved.cx, reserved.cy, Tiles.stairsDown);
+  return {
+    tiles, rooms,
+    stairs: { x: reserved.cx, y: reserved.cy },
+    bossRoom: reserved,
+    door,
+  };
+}
+
+// -- The Siege Yards: rooms and corridors ------------------------------------
+//
+// The original, and right for a place built by an army in a hurry: rectangles
+// with paths trodden between them.
+function siegeYards(rng, tiles, width, height, reserved) {
   const rooms = [];
-
-  for (let attempt = 0; attempt < maxRooms * 3 && rooms.length < maxRooms; attempt++) {
-    const w = rng.int(minRoomSize, maxRoomSize);
-    const h = rng.int(minRoomSize - 1, maxRoomSize - 2);
-    const x = rng.int(1, width - w - 2);
-    const y = rng.int(1, height - h - 2);
-    const room = { x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1) };
-
-    // One cell of padding keeps rooms from fusing into blobs.
-    if (rooms.some((other) => overlaps(room, other, 1))) continue;
-
+  for (let attempt = 0; attempt < 80 && rooms.length < 26; attempt++) {
+    const room = randomRoom(rng, width, height, 5, 11, 4, 9);
+    if (!fits(room, rooms, reserved, 1)) continue;
     carveRoom(tiles, room);
-    if (rooms.length > 0) {
-      const prev = rooms[rooms.length - 1];
-      carveCorridor(tiles, prev.cx, prev.cy, room.cx, room.cy, rng);
+    if (rooms.length) connect(tiles, rooms[rooms.length - 1], room, rng);
+    rooms.push(room);
+  }
+  return rooms;
+}
+
+// -- The Reliquary: catacombs ------------------------------------------------
+//
+// Many small chambers, packed tight, with more ways between them than you can
+// hold in your head. Filed, in other words.
+function catacombs(rng, tiles, width, height, reserved) {
+  const rooms = [];
+  for (let attempt = 0; attempt < 260 && rooms.length < 34; attempt++) {
+    const room = randomRoom(rng, width, height, 3, 6, 3, 5);
+    if (!fits(room, rooms, reserved, 1)) continue;
+    carveRoom(tiles, room);
+    if (rooms.length) {
+      connect(tiles, rooms[rooms.length - 1], room, rng);
+      // Extra doorways back into the warren, so it loops instead of branching.
+      if (rooms.length > 2 && rng.chance(0.45)) {
+        connect(tiles, rng.pick(rooms.slice(0, -1)), room, rng);
+      }
+    }
+    rooms.push(room);
+  }
+  return rooms;
+}
+
+// -- The Choir: cathedral halls ----------------------------------------------
+//
+// Few rooms, enormous ones, joined by aisles two tiles wide, with pillars
+// standing in the open floor. Built to carry a voice.
+function cathedral(rng, tiles, width, height, reserved) {
+  const rooms = [];
+  for (let attempt = 0; attempt < 120 && rooms.length < 8; attempt++) {
+    const room = randomRoom(rng, width, height, 11, 19, 7, 12);
+    if (!fits(room, rooms, reserved, 2)) continue;
+    carveRoom(tiles, room);
+    if (rooms.length) {
+      const previous = rooms[rooms.length - 1];
+      connect(tiles, previous, room, rng);
+      connect(tiles, previous, room, rng, 1);   // second lane, one tile over
     }
     rooms.push(room);
   }
 
-  const last = rooms[rooms.length - 1];
-  tiles.set(last.cx, last.cy, Tiles.stairsDown);
+  // Pillars: single blocks well inside a hall, which break line of sight
+  // without ever closing a path.
+  for (const room of rooms) {
+    if (room.w < 9 || room.h < 6) continue;
+    for (let y = room.y + 2; y < room.y + room.h - 2; y += 3) {
+      for (let x = room.x + 2; x < room.x + room.w - 2; x += 4) {
+        if (x === room.cx && y === room.cy) continue;
+        tiles.set(x, y, Tiles.wall);
+      }
+    }
+  }
+  return rooms;
+}
 
-  return { tiles, rooms, stairs: { x: last.cx, y: last.cy } };
+// -- The Empty Tomb: caves ---------------------------------------------------
+//
+// Not built by anyone. Cellular automata, then everything but the largest
+// cavern is filled back in, which is what guarantees the floor is walkable end
+// to end without a single corridor being drawn.
+function caves(rng, tiles, width, height, reserved) {
+  const WALL_CHANCE = 0.45;
+  const PASSES = 4;
+
+  let cells = new Grid(width, height, true);
+  cells.forEach((x, y) => {
+    const edge = x < 1 || y < 1 || x >= width - 1 || y >= height - 1;
+    cells.set(x, y, edge ? true : rng.chance(WALL_CHANCE));
+  });
+
+  for (let pass = 0; pass < PASSES; pass++) {
+    const next = new Grid(width, height, true);
+    cells.forEach((x, y) => {
+      if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return;
+      let walls = 0;
+      for (const [dx, dy] of DIRS8) if (cells.get(x + dx, y + dy) !== false) walls++;
+      next.set(x, y, walls >= 5);
+    });
+    cells = next;
+  }
+
+  if (reserved) blockOut(cells, reserved, 2);
+
+  const region = largestCavern(cells, width, height);
+  if (region.length < width * height * 0.16) return [];   // too cramped; regenerate
+
+  for (const [x, y] of region) tiles.set(x, y, Tiles.floor);
+  return pocketsFrom(region, rng, width);
+}
+
+function largestCavern(cells, width, height) {
+  const seen = new Grid(width, height, false);
+  let best = [];
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      if (cells.get(x, y) !== false || seen.get(x, y)) continue;
+      const region = [];
+      const queue = [[x, y]];
+      seen.set(x, y, true);
+      for (let head = 0; head < queue.length; head++) {
+        const [cx, cy] = queue[head];
+        region.push([cx, cy]);
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (cells.get(nx, ny) !== false || seen.get(nx, ny)) continue;
+          seen.set(nx, ny, true);
+          queue.push([nx, ny]);
+        }
+      }
+      if (region.length > best.length) best = region;
+    }
+  }
+  return best;
+}
+
+/**
+ * Caves have no rooms, but the rest of the game asks for some: where to start
+ * the player, where to scatter monsters, where a predecessor is waiting. These
+ * are open pockets spread across the cavern, kept apart so the floor populates
+ * evenly instead of piling everything into one corner.
+ */
+function pocketsFrom(region, rng, width) {
+  const MIN_GAP = 9;
+  const pockets = [];
+  const shuffled = rng.shuffle([...region]);
+
+  for (const [x, y] of shuffled) {
+    if (pockets.length >= 18) break;
+    if (pockets.some((p) => Math.abs(p.cx - x) + Math.abs(p.cy - y) < MIN_GAP)) continue;
+    pockets.push({ x: x - 1, y: y - 1, w: 3, h: 3, cx: x, cy: y });
+  }
+  void width;
+  return pockets;
+}
+
+// -- The boss arena ----------------------------------------------------------
+
+/** A rectangle set aside before anything else is drawn on the map. */
+function reserveArena(rng, width, height) {
+  const w = rng.int(11, 15);
+  const h = rng.int(7, 9);
+  const x = rng.int(2, width - w - 3);
+  const y = rng.int(2, height - h - 3);
+  return { x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1), arena: true };
+}
+
+/**
+ * Carve the arena and cut exactly one way in. Everything on the ring around it
+ * is walled afterwards, so however the corridor wandered there is precisely one
+ * door -- which is the whole point: a fight you choose to start and cannot walk
+ * out of.
+ */
+function openArena(tiles, arena, rooms) {
+  carveRoom(tiles, arena);
+
+  const target = nearestFloorOutside(tiles, arena);
+  if (!target) return null;
+
+  carveLine(tiles, arena.cx, arena.cy, target.x, target.y);
+
+  // The ring is every tile immediately around the arena. Keep the one nearest
+  // the corridor as the door; wall the rest.
+  const ring = ringAround(arena, tiles);
+  const opened = ring.filter(([x, y]) => tiles.get(x, y)?.walkable);
+  if (!opened.length) return null;
+
+  let door = opened[0];
+  let bestDistance = Infinity;
+  for (const [x, y] of opened) {
+    const distance = Math.abs(x - target.x) + Math.abs(y - target.y);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      door = [x, y];
+    }
+  }
+
+  for (const [x, y] of ring) {
+    if (x === door[0] && y === door[1]) continue;
+    tiles.set(x, y, Tiles.wall);
+  }
+  tiles.set(door[0], door[1], Tiles.door);
+
+  void rooms;
+  return { x: door[0], y: door[1] };
+}
+
+function ringAround(rect, tiles) {
+  const ring = [];
+  for (let x = rect.x - 1; x <= rect.x + rect.w; x++) {
+    for (const y of [rect.y - 1, rect.y + rect.h]) {
+      if (tiles.inBounds(x, y)) ring.push([x, y]);
+    }
+  }
+  for (let y = rect.y; y < rect.y + rect.h; y++) {
+    for (const x of [rect.x - 1, rect.x + rect.w]) {
+      if (tiles.inBounds(x, y)) ring.push([x, y]);
+    }
+  }
+  return ring;
+}
+
+function nearestFloorOutside(tiles, arena) {
+  let best = null;
+  let bestDistance = Infinity;
+  tiles.forEach((x, y, tile) => {
+    if (!tile.walkable) return;
+    if (within(arena, x, y, 1)) return;
+    const distance = Math.abs(x - arena.cx) + Math.abs(y - arena.cy);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = { x, y };
+    }
+  });
+  return best;
+}
+
+// -- shared carving ----------------------------------------------------------
+
+function randomRoom(rng, width, height, minW, maxW, minH, maxH) {
+  const w = rng.int(minW, maxW);
+  const h = rng.int(minH, maxH);
+  const x = rng.int(1, Math.max(1, width - w - 2));
+  const y = rng.int(1, Math.max(1, height - h - 2));
+  return { x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1) };
+}
+
+function fits(room, rooms, reserved, pad) {
+  if (reserved && overlaps(room, reserved, 2)) return false;
+  return !rooms.some((other) => overlaps(room, other, pad));
 }
 
 function overlaps(a, b, pad) {
   return (
-    a.x - pad < b.x + b.w && a.x + a.w + pad > b.x &&
-    a.y - pad < b.y + b.h && a.y + a.h + pad > b.y
+    a.x - pad < b.x + b.w && a.x + a.w + pad > b.x
+    && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y
   );
+}
+
+function within(rect, x, y, pad = 0) {
+  return x >= rect.x - pad && x < rect.x + rect.w + pad
+    && y >= rect.y - pad && y < rect.y + rect.h + pad;
+}
+
+function blockOut(cells, rect, pad) {
+  for (let y = rect.y - pad; y < rect.y + rect.h + pad; y++) {
+    for (let x = rect.x - pad; x < rect.x + rect.w + pad; x++) cells.set(x, y, true);
+  }
 }
 
 function carveRoom(tiles, room) {
@@ -571,14 +882,21 @@ function carveRoom(tiles, room) {
   }
 }
 
-function carveCorridor(tiles, x1, y1, x2, y2, rng) {
+function connect(tiles, from, to, rng, offset = 0) {
+  const fx = from.cx + offset;
+  const fy = from.cy + offset;
   if (rng.chance(0.5)) {
-    carveH(tiles, x1, x2, y1);
-    carveV(tiles, y1, y2, x2);
+    carveH(tiles, fx, to.cx, fy);
+    carveV(tiles, fy, to.cy, to.cx);
   } else {
-    carveV(tiles, y1, y2, x1);
-    carveH(tiles, x1, x2, y2);
+    carveV(tiles, fy, to.cy, fx);
+    carveH(tiles, fx, to.cx, to.cy);
   }
+}
+
+function carveLine(tiles, x1, y1, x2, y2) {
+  carveH(tiles, x1, x2, y1);
+  carveV(tiles, y1, y2, x2);
 }
 
 function carveH(tiles, x1, x2, y) {
@@ -596,18 +914,39 @@ function carveV(tiles, y1, y2, x) {
 // ==== src/world/level.js ===================
 // One dungeon floor: terrain, what the player has seen, and everything in it.
 class Level {
-  constructor(rng, width, height, depth) {
-    const { tiles, rooms, stairs } = generateLevel(rng, width, height);
+  constructor(rng, width, height, depth, options = {}) {
+    const { tiles, rooms, stairs, bossRoom, door } =
+      generateLevel(rng, width, height, options);
     this.width = width;
     this.height = height;
     this.depth = depth;
     this.tiles = tiles;
     this.rooms = rooms;
     this.stairs = stairs;
+    this.bossRoom = bossRoom;
+    this.door = door;
+    this.doorLocked = false;
     this.entities = [];
 
     this.visible = new Grid(width, height, false);
     this.explored = new Grid(width, height, false);
+  }
+
+  /** A boss arena is only a threshold while something in it is still alive. */
+  arenaHolds() {
+    return Boolean(this.bossRoom) && this.entities.some((e) => e.boss && e.alive);
+  }
+
+  /** Inside the boss arena, if this floor has one. */
+  inArena(x, y) {
+    const room = this.bossRoom;
+    if (!room) return false;
+    return x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h;
+  }
+
+  /** The arena is a closed fight: nothing may be placed or land inside it. */
+  isSealedOff(x, y) {
+    return Boolean(this.bossRoom) && this.inArena(x, y);
   }
 
   isWalkable(x, y) {
@@ -1021,6 +1360,37 @@ function itemTable(depth) {
 
 const SLOTS = ['weapon', 'shield', 'armour'];
 
+// ---------------------------------------------------------------------------
+// MERGING
+//
+// Carry two of anything and they can be pressed into one lasting advantage.
+// Every boon is a *derived* stat -- power, defense, speed, or how fast wounds
+// close -- and never a change to a base stat. That is deliberate: base stats
+// are what the memorial records and what a revenant is rebuilt from, so a
+// crusader's merges die with them and can never come back wearing their face.
+// ---------------------------------------------------------------------------
+const MERGE_BOONS = {
+  weapon: { stat: 'power', amount: 1, text: 'the hand remembers the weight' },
+  shield: { stat: 'defense', amount: 1, text: 'you flinch a little later' },
+  armour: { stat: 'defense', amount: 1, text: 'the fit is better than it was' },
+  heal: { stat: 'regen', amount: 4, text: 'wounds close quicker than they did' },
+  smite: { stat: 'power', amount: 1, text: 'the note stays in your hands' },
+  ward: { stat: 'defense', amount: 1, text: 'the psalm no longer needs singing' },
+  blink: { stat: 'speed', amount: 5, text: 'the floor lets go of you sooner' },
+};
+
+/** What pressing two of this item together leaves you with, or null. */
+function mergeBoon(spec) {
+  if (!spec || spec.seal || spec.victory) return null;
+  if (spec.equip) return MERGE_BOONS[spec.equip.slot] ?? null;
+  if (spec.use) return MERGE_BOONS[spec.use.kind] ?? null;
+  return null;
+}
+
+const MERGE_LABEL = {
+  power: 'power', defense: 'defense', speed: 'speed', regen: 'recovery',
+};
+
 /** Short label shown beside the item's name in the pack. */
 function itemCategory(spec) {
   if (spec.seal) return 'seal';
@@ -1127,6 +1497,7 @@ function makePlayer(x, y, name) {
     level: 1, xp: 0,
     inventory: [],
     seals: [],
+    merges: [],
     equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
@@ -1184,12 +1555,15 @@ function makeRevenant(entry, x, y) {
   // They are still wearing it, so it still counts -- and it is still on them
   // when they go down again.
   const kitEntries = normaliseKit(entry.equipment);
-  const kit = kitEntries.map(({ key }) => ITEMS[key]).filter(Boolean);
-  const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
 
-  // A revenant is the crusader as they actually were: the stats they had
-  // levelled to, plus the kit they were wearing. The fallbacks cover memorial
-  // entries written before levelling existed.
+  // A revenant is the crusader as they actually were -- the stats they levelled
+  // to -- and nothing their equipment was doing for them.
+  //
+  // Their gear used to buff them as well as drop from them, which meant a
+  // predecessor who died in good armour came back as a wall on floor three,
+  // long before the crusader meeting them could field anything comparable.
+  // The kit keeps every point it ever had. It just does not lend them any.
+  // The fallbacks cover memorial entries written before levelling existed.
   const hp = entry.maxHp ?? 14 + depth * 3;
   const level = entry.level ?? 1;
 
@@ -1198,10 +1572,10 @@ function makeRevenant(entry, x, y) {
     glyph: '@', color: 'revenant',
     name: 'the revenant of ' + entry.name,
     blocks: true,
-    speed: Math.max(40, 100 + bonus('speed')),
+    speed: 100,
     maxHp: hp, hp,
-    power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
-    defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
+    power: entry.power ?? 4 + Math.floor(depth / 2),
+    defense: entry.defense ?? 1 + Math.floor(depth / 4),
     xp: 20 + depth * 8 + level * 10,
     drops: [
       ...(entry.relics ?? []).map((key) => ({ key, heirloom: null })),
@@ -1294,6 +1668,17 @@ function heirloomFor(item, field) {
   return 0;
 }
 
+/**
+ * Permanent advantages from merging duplicates. Derived, never written into a
+ * base stat, so they belong to this crusader alone -- a revenant rebuilt from
+ * the memorial has none of them.
+ */
+function mergeBonus(entity, stat) {
+  if (!entity.merges?.length) return 0;
+  return entity.merges.reduce(
+    (sum, merge) => sum + (merge.boon.stat === stat ? merge.boon.amount : 0), 0);
+}
+
 // -- Traits ------------------------------------------------------------------
 
 function traitsOf(entity) {
@@ -1332,11 +1717,11 @@ function tickBlock(entity) {
 }
 
 function effectivePower(entity) {
-  return entity.power + gearBonus(entity, 'power');
+  return entity.power + gearBonus(entity, 'power') + mergeBonus(entity, 'power');
 }
 
 function effectiveDefense(entity) {
-  return entity.defense + gearBonus(entity, 'defense')
+  return entity.defense + gearBonus(entity, 'defense') + mergeBonus(entity, 'defense')
     + statusAmount(entity, 'ward') + sanctuaryBonus(entity);
 }
 
@@ -1346,7 +1731,8 @@ function effectiveDefense(entity) {
  * for a turn that cannot arrive.
  */
 function effectiveSpeed(entity) {
-  return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
+  return Math.max(MIN_SPEED,
+    entity.speed + gearBonus(entity, 'speed') + mergeBonus(entity, 'speed'));
 }
 
 /**
@@ -1401,13 +1787,21 @@ const DEFENSE_EVERY = 3;  // levels
  * accumulation rather than by any single mistake. It also gives retreating a
  * point, which is most of what makes a roguelike tactical.
  */
+/** Merged phials shorten the wait between one point of healing and the next. */
+function regenInterval(actor) {
+  const quickened = actor.merges
+    ? actor.merges.reduce((sum, m) => sum + (m.boon.stat === 'regen' ? m.boon.amount : 0), 0)
+    : 0;
+  return Math.max(6, REGEN_TURNS - quickened);
+}
+
 function tickRegeneration(actor) {
   if (actor.hp >= actor.maxHp) {
     actor.regenTimer = 0;
     return;
   }
   actor.regenTimer = (actor.regenTimer ?? 0) + 1;
-  if (actor.regenTimer < REGEN_TURNS) return;
+  if (actor.regenTimer < regenInterval(actor)) return;
   actor.regenTimer = 0;
   actor.hp++;
 }
@@ -1691,7 +2085,10 @@ function openSpotNear(game, boss) {
   for (const [dx, dy] of offsets) {
     const x = boss.x + dx;
     const y = boss.y + dy;
-    if (game.level.isOpen(x, y)) return { x, y };
+    if (!game.level.isOpen(x, y)) continue;
+    // Names answer inside the room, never through the wall.
+    if (game.level.bossRoom && !game.level.inArena(x, y)) continue;
+    return { x, y };
   }
   return null;
 }
@@ -2045,9 +2442,13 @@ function retreat(game, monster) {
 }
 
 function moveIfOpen(game, monster, [dx, dy]) {
-  if (!game.level.isOpen(monster.x + dx, monster.y + dy)) return false;
-  monster.x += dx;
-  monster.y += dy;
+  const x = monster.x + dx;
+  const y = monster.y + dy;
+  if (!game.level.isOpen(x, y)) return false;
+  // A boss belongs to its room and does not follow you out of it.
+  if (monster.boss && game.level.bossRoom && !game.level.inArena(x, y)) return false;
+  monster.x = x;
+  monster.y = y;
   return true;
 }
 
@@ -2473,6 +2874,7 @@ class Game {
     // per run: the story is told again to the next crusader, because it is the
     // crusade telling it and the crusade repeats itself.
     this.storyQueue = [];
+    this.prompt = null;
     this.chaptersSeen = new Set();
     this.loreSeen = new Set();
     this.runRecorded = false;
@@ -2495,7 +2897,10 @@ class Game {
 
   buildLevel(depth) {
     this.region = regionForDepth(depth);
-    this.level = new Level(this.rng, this.width, this.height, depth);
+    this.level = new Level(this.rng, this.width, this.height, depth, {
+      region: this.region,
+      bossFloor: isBossDepth(depth),
+    });
     this.level.region = this.region;
 
     const start = this.level.rooms[0];
@@ -2504,6 +2909,7 @@ class Game {
     this.level.add(this.player);
 
     this.wanderers = 0;
+    this.prompt = null;
     this.echoes = [];              // a note does not carry between floors
     this.setUpGate(depth);
     this.populate(depth);
@@ -2574,11 +2980,11 @@ class Game {
     if (boss) this.placeBoss();
   }
 
-  /** The boss stands on the way out, because of course it does. */
+  /** The boss waits in its own room, alone, on the way out. */
   placeBoss() {
     const spec = { key: this.region.boss, ...MONSTERS[this.region.boss] };
-    const lastRoom = this.level.rooms[this.level.rooms.length - 1];
-    const spot = this.freeSpotInRoom(lastRoom) ?? this.freeSpotInRoom(this.level.rooms[1]);
+    const arena = this.level.bossRoom ?? this.level.rooms[this.level.rooms.length - 1];
+    const spot = this.freeSpotInRoom(arena) ?? this.freeSpotInRoom(this.level.rooms[0]);
     if (!spot) return;
     const boss = makeMonster(spec, spot.x, spot.y);
     prepareBoss(this, boss);
@@ -2609,19 +3015,31 @@ class Game {
   }
 
   freeSpotInRoom(room) {
+    const isArena = room === this.level.bossRoom;
     for (let tries = 0; tries < 20; tries++) {
       const x = this.rng.int(room.x, room.x + room.w - 1);
       const y = this.rng.int(room.y, room.y + room.h - 1);
-      if (this.level.isOpen(x, y)) return { x, y };
+      if (!this.level.isOpen(x, y)) continue;
+      // Nothing but the boss is placed inside a sealed arena.
+      if (!isArena && this.level.isSealedOff(x, y)) continue;
+      return { x, y };
     }
     return null;
   }
 
+  /**
+   * Somewhere legal to put a thing. While a boss fight is sealed the arena is
+   * the only legal ground -- otherwise a blink would step the player straight
+   * out through a locked door.
+   */
   randomOpenTile() {
+    const confined = this.level.doorLocked;
     for (let tries = 0; tries < 400; tries++) {
       const x = this.rng.int(1, this.level.width - 2);
       const y = this.rng.int(1, this.level.height - 2);
-      if (this.level.isOpen(x, y)) return { x, y };
+      if (!this.level.isOpen(x, y)) continue;
+      if (confined !== this.level.inArena(x, y)) continue;
+      return { x, y };
     }
     return null;
   }
@@ -2631,6 +3049,7 @@ class Game {
   onBossDefeated(boss) {
     if (boss.entranceShown !== undefined) delete boss.entranceShown;
     this.log('The way is no longer being argued about.', 'mythic');
+    this.unlockArena();
   }
 
   /** Called when a seal reaches the pack. Opens this floor's gate, if it fits. */
@@ -2736,9 +3155,9 @@ class Game {
    * arriving on the floor, so the story lands where the obstacle is.
    */
   announceGate() {
-    if (!this.level.sealed || !this.level.stairs) return;
+    if (!this.level.sealed || !this.level.door) return;
     if (this.chaptersSeen.has(this.region.key)) return;
-    if (!this.level.visible.get(this.level.stairs.x, this.level.stairs.y)) return;
+    if (!this.level.visible.get(this.level.door.x, this.level.door.y)) return;
 
     const chapter = GATE_CHAPTERS[this.region.key];
     if (!chapter) return;
@@ -2765,6 +3184,88 @@ class Game {
         });
       }
     }
+  }
+
+  /** The prompt shown at a boss door. Answered by enterArena/declineArena. */
+  askToEnter() {
+    if (this.prompt) return;
+    this.prompt = {
+      kind: 'enterArena',
+      title: 'The door is shut.',
+      question: 'Are you sure you want to enter?',
+      note: 'It will not open again until whatever is behind it is finished.',
+    };
+  }
+
+  declineArena() {
+    this.prompt = null;
+    this.log('You leave the door shut, for now.', 'textDim');
+  }
+
+  /** Step through, bar the door, and meet what is inside. */
+  enterArena() {
+    this.prompt = null;
+    const door = this.level.door;
+    const arena = this.level.bossRoom;
+    if (!door || !arena) return false;
+
+    const inside = this.insideDoor(door, arena);
+    if (!inside) return false;
+
+    this.player.x = inside.x;
+    this.player.y = inside.y;
+    if (this.level.arenaHolds()) {
+      this.level.tiles.set(door.x, door.y, Tiles.doorLocked);
+      this.level.doorLocked = true;
+      this.log('The door shuts behind you.', 'bad');
+    }
+    this.level.updateFov(this.player, this.theme.fovRadius);
+
+    const key = this.region.boss;
+    const lore = BOSS_LORE[key];
+    if (lore && !this.loreSeen.has(key)) {
+      this.loreSeen.add(key);
+      this.tellStory({
+        kind: 'boss', title: lore.title, lines: lore.lines, mechanic: lore.mechanic,
+      });
+    }
+    for (const e of this.level.entities) if (e.boss) e.announced = true;
+    return true;
+  }
+
+  /**
+   * Where the player lands on stepping through. Normally the tile straight
+   * inward, but a boss standing in the doorway must not make the door
+   * unopenable -- fall back to the nearest free ground inside.
+   */
+  insideDoor(door, arena) {
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const x = door.x + dx;
+      const y = door.y + dy;
+      if (this.level.inArena(x, y) && this.level.isOpen(x, y)) return { x, y };
+    }
+
+    let best = null;
+    let bestDistance = Infinity;
+    for (let y = arena.y; y < arena.y + arena.h; y++) {
+      for (let x = arena.x; x < arena.x + arena.w; x++) {
+        if (!this.level.isOpen(x, y)) continue;
+        const distance = Math.abs(x - door.x) + Math.abs(y - door.y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Killing the boss unbars the door. */
+  unlockArena() {
+    if (!this.level.doorLocked || !this.level.door) return;
+    this.level.doorLocked = false;
+    this.level.tiles.set(this.level.door.x, this.level.door.y, Tiles.door);
+    this.log('The door gives, and swings open.', 'good');
   }
 
   tellStory(card) {
@@ -2952,8 +3453,24 @@ function moveOrAttack(game, actor, dx, dy) {
     }
   }
 
+  const tile = level.tiles.get(nx, ny);
+
+  // A boss door is a question, not a step. Walking into it costs no turn --
+  // the turn is spent only if the answer is yes.
+  // Once whatever was in there is finished, the door is just a door: walking
+  // back in for the loot must not ask again, nor shut behind you again.
+  if (actor.isPlayer && tile === Tiles.door && level.arenaHolds()
+    && !level.inArena(actor.x, actor.y)) {
+    game.askToEnter();
+    return false;
+  }
+
   if (!level.isWalkable(nx, ny)) {
-    if (actor.isPlayer) game.log('Blocked.', 'textDim');
+    if (actor.isPlayer) {
+      game.log(tile === Tiles.doorLocked
+        ? 'The door is barred. Whatever is in here with you is still standing.'
+        : 'Blocked.', 'textDim');
+    }
     return false;
   }
 
@@ -3194,6 +3711,48 @@ function unequip(game, actor, slot) {
   return true;
 }
 
+/**
+ * Press two of the same thing into one lasting advantage. Copies with no
+ * history are spent first, so a merge never quietly eats the heirloom you took
+ * off a predecessor when a plain duplicate would have done.
+ */
+function mergeDuplicates(game, actor) {
+  const byKey = new Map();
+  for (let i = 0; i < actor.inventory.length; i++) {
+    const key = actor.inventory[i].item.key;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(i);
+  }
+
+  for (const [key, indices] of byKey) {
+    if (indices.length < 2) continue;
+    const spec = ITEMS[key];
+    const boon = mergeBoon(spec);
+    if (!boon) continue;
+
+    // Spend the two least storied copies.
+    const spend = indices
+      .sort((a, b) => heirloomBonus(actor.inventory[a].item.heirloom)
+        - heirloomBonus(actor.inventory[b].item.heirloom))
+      .slice(0, 2)
+      .sort((a, b) => b - a);
+    for (const index of spend) actor.inventory.splice(index, 1);
+
+    actor.merges.push({ key, name: spec.name, boon });
+    game.log('You press two ' + spec.name + 's together. They do not come apart.', 'notable');
+    game.log(capitalise(boon.text) + ': +' + boon.amount + ' '
+      + MERGE_LABEL[boon.stat] + ' for the rest of this crusade.', 'good');
+    return true;
+  }
+
+  game.log('Nothing in the pack doubles up.', 'textDim');
+  return false;
+}
+
+function capitalise(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function descend(game) {
   const level = game.level;
   const tile = level.tiles.get(game.player.x, game.player.y);
@@ -3354,6 +3913,7 @@ function keyToIntent(event) {
   if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
   if (key === 'x') return { type: 'drop' };
+  if (key === 'm') return { type: 'merge' };
   if (key === 'f') return { type: 'fire' };
   if (key === 'n') return { type: 'rename' };
   if (raw === '>') return { type: 'descend' };
@@ -3369,6 +3929,7 @@ const HELP = [
   ['take', 'g'],
   ['use / wear', '1-9'],
   ['drop', 'x then 1-9'],
+  ['merge', 'm'],
   ['descend', '>'],
   ['name', 'n'],
   ['restart', 'r'],
@@ -3443,6 +4004,10 @@ class Panel {
       stances.push(p.blockCooldown > 0
         ? '<span class="tag" style="color:' + colors.bad + '">shield down (' + p.blockCooldown + ')</span>'
         : '<span class="tag" style="color:' + colors.good + '">shield up</span>');
+    }
+    for (const merge of p.merges ?? []) {
+      stances.push('<span class="tag" style="color:' + colors.notable + '">'
+        + escapeHtml(MERGE_LABEL[merge.boon.stat]) + ' +' + merge.boon.amount + '</span>');
     }
     this.el.statuses.innerHTML = stances.join(' ');
 
@@ -3605,6 +4170,10 @@ const storyEl = document.getElementById('story');
 const storyTitle = document.getElementById('story-title');
 const storyLines = document.getElementById('story-lines');
 const storyMechanic = document.getElementById('story-mechanic');
+const promptEl = document.getElementById('prompt');
+const promptTitle = document.getElementById('prompt-title');
+const promptQuestion = document.getElementById('prompt-question');
+const promptNote = document.getElementById('prompt-note');
 const crusaderEl = document.getElementById('crusader');
 const renameButton = document.getElementById('rename');
 const renameInput = document.getElementById('rename-input');
@@ -3673,6 +4242,28 @@ renameInput.addEventListener('blur', () => finishRename(true));
 
 // -- the story card ---------------------------------------------------------
 
+function renderPrompt() {
+  const ask = game.prompt;
+  if (!ask) {
+    promptEl.hidden = true;
+    return;
+  }
+  promptTitle.textContent = ask.title;
+  promptQuestion.textContent = ask.question;
+  promptNote.textContent = ask.note ?? '';
+  promptEl.hidden = false;
+}
+
+function answerPrompt(yes) {
+  if (!game.prompt) return;
+  if (yes) game.enterArena();
+  else game.declineArena();
+  redraw();
+}
+
+document.getElementById('prompt-yes').addEventListener('click', () => answerPrompt(true));
+document.getElementById('prompt-no').addEventListener('click', () => answerPrompt(false));
+
 function renderStory() {
   const card = game.pendingStory();
   if (!card) {
@@ -3713,6 +4304,7 @@ function redraw() {
   renderer.draw(game);
   panel.update(game);
   renderStory();
+  renderPrompt();
   document.body.classList.toggle('over', game.state !== 'playing');
 }
 
@@ -3736,6 +4328,7 @@ function handleIntent(intent) {
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
     case 'fire': acted = fire(game, game.player); break;
+    case 'merge': acted = mergeDuplicates(game, game.player); break;
     case 'use':
       acted = wasPendingDrop
         ? dropItem(game, game.player, intent.index)
@@ -3756,6 +4349,16 @@ function handleIntent(intent) {
 window.addEventListener('keydown', (event) => {
   if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+  // A question holds the floor until it is answered.
+  if (game.prompt) {
+    const key = event.key.toLowerCase();
+    if (key === 'y' || key === 'n' || key === 'escape') {
+      event.preventDefault();
+      answerPrompt(key === 'y');
+    }
+    return;
+  }
 
   // A story card holds the floor: any key reads on, and none of them is a turn.
   if (game.pendingStory()) {

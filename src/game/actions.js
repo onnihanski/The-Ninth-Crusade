@@ -1,6 +1,8 @@
 import { meleeStrike, attack } from './combat.js';
 import { applyEffect } from './effects.js';
 import { Tiles } from '../world/tiles.js';
+import { ITEMS, mergeBoon, MERGE_LABEL } from '../data/items.js';
+import { heirloomBonus } from '../data/traits.js';
 import { effectiveSpeed, rangedProfile, canFire, hasTrait } from './status.js';
 import { shoot } from './combat.js';
 import { chebyshev, line } from '../engine/grid.js';
@@ -32,8 +34,24 @@ export function moveOrAttack(game, actor, dx, dy) {
     }
   }
 
+  const tile = level.tiles.get(nx, ny);
+
+  // A boss door is a question, not a step. Walking into it costs no turn --
+  // the turn is spent only if the answer is yes.
+  // Once whatever was in there is finished, the door is just a door: walking
+  // back in for the loot must not ask again, nor shut behind you again.
+  if (actor.isPlayer && tile === Tiles.door && level.arenaHolds()
+    && !level.inArena(actor.x, actor.y)) {
+    game.askToEnter();
+    return false;
+  }
+
   if (!level.isWalkable(nx, ny)) {
-    if (actor.isPlayer) game.log('Blocked.', 'textDim');
+    if (actor.isPlayer) {
+      game.log(tile === Tiles.doorLocked
+        ? 'The door is barred. Whatever is in here with you is still standing.'
+        : 'Blocked.', 'textDim');
+    }
     return false;
   }
 
@@ -272,6 +290,48 @@ export function unequip(game, actor, slot) {
   actor.inventory.push(item);
   game.log('You set aside the ' + item.name + '.', 'textDim');
   return true;
+}
+
+/**
+ * Press two of the same thing into one lasting advantage. Copies with no
+ * history are spent first, so a merge never quietly eats the heirloom you took
+ * off a predecessor when a plain duplicate would have done.
+ */
+export function mergeDuplicates(game, actor) {
+  const byKey = new Map();
+  for (let i = 0; i < actor.inventory.length; i++) {
+    const key = actor.inventory[i].item.key;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(i);
+  }
+
+  for (const [key, indices] of byKey) {
+    if (indices.length < 2) continue;
+    const spec = ITEMS[key];
+    const boon = mergeBoon(spec);
+    if (!boon) continue;
+
+    // Spend the two least storied copies.
+    const spend = indices
+      .sort((a, b) => heirloomBonus(actor.inventory[a].item.heirloom)
+        - heirloomBonus(actor.inventory[b].item.heirloom))
+      .slice(0, 2)
+      .sort((a, b) => b - a);
+    for (const index of spend) actor.inventory.splice(index, 1);
+
+    actor.merges.push({ key, name: spec.name, boon });
+    game.log('You press two ' + spec.name + 's together. They do not come apart.', 'notable');
+    game.log(capitalise(boon.text) + ': +' + boon.amount + ' '
+      + MERGE_LABEL[boon.stat] + ' for the rest of this crusade.', 'good');
+    return true;
+  }
+
+  game.log('Nothing in the pack doubles up.', 'textDim');
+  return false;
+}
+
+function capitalise(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function descend(game) {

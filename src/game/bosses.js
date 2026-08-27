@@ -112,7 +112,10 @@ function openSpotNear(game, boss) {
   for (const [dx, dy] of offsets) {
     const x = boss.x + dx;
     const y = boss.y + dy;
-    if (game.level.isOpen(x, y)) return { x, y };
+    if (!game.level.isOpen(x, y)) continue;
+    // Names answer inside the room, never through the wall.
+    if (game.level.bossRoom && !game.level.inArena(x, y)) continue;
+    return { x, y };
   }
   return null;
 }

@@ -58,6 +58,7 @@ node tests/smoke.mjs
 | Fire        | `f`                           |
 | Take        | `g`                           |
 | Use / wear  | `1`–`9`                       |
+| Merge two   | `m`                           |
 | Drop        | `x` then `1`–`9`               |
 | Descend     | `>` while standing on `>`     |
 | Restart     | `r`                           |
@@ -176,6 +177,18 @@ becomes a question of what you keep rather than what you drink immediately.
 **Echo.** The spark of the choir sounds twice — once when you use it, and again
 three turns later against a target it picks itself.
 
+## Merging
+
+Carry two of anything and `m` presses them into one permanent advantage —
+weapons into power, armour into defense, phials into faster recovery. Copies
+with no history are spent first, so a merge never quietly eats the heirloom you
+took off a predecessor when a plain duplicate would have done.
+
+Every boon is a *derived* stat, never a change to a base one. That is
+deliberate: base stats are what the memorial records and what a revenant is
+rebuilt from, so a crusader's merges die with them and can never come back
+wearing their face.
+
 ### Heirlooms
 
 Gear taken off your own revenant remembers who carried it. It gains a permanent
@@ -186,6 +199,12 @@ it and how far.
 
 This is the memorial paying you back: your best gear becomes gear with a
 provenance, and getting it back means killing the version of you that had it.
+
+A revenant carries your old kit and gains nothing from it. It used to wear the
+gear *and* benefit from it, which meant a predecessor who died in good armour
+came back as a wall on floor three, long before the crusader meeting them could
+field anything comparable. The kit drops with every point it ever had. It just
+does not lend them any.
 
 ## Balance
 
@@ -200,10 +219,8 @@ It runs two policies — `clear` (fights the floor, takes the loot, then descend
 and `dive` (fights what is in the way and little else) — and takes
 `BALANCE_DISABLE=reach,attune` to strip named mechanics from the item data, so
 any one of them can be measured rather than guessed at. As of the current
-numbers, a thorough crusader wins about **21%** of the time, reaches a median
-depth of 11 at a median level of 14, and dies on every floor of the dungeon —
-with the largest single share on the last one, which is where the hardest fight
-in the game is supposed to be. The harness plays melee only and never
+numbers, a thorough crusader wins about **20%** of the time, reaches a median
+depth of 9 at a median level of 9, and dies on every floor of the dungeon. The harness plays melee only and never
 picks up a bow, so it is a floor on the real number, not the number. A hurried one dies at the first boss,
 every time, which is the intended lesson.
 
@@ -280,6 +297,32 @@ is about to happen and you still have to solve it.
 | 7–9 | The Choir | Odo the Precentor | Reaches you wherever he can be heard — range is not a thing that happens to a voice. |
 | 10–12 | The Empty Tomb | **Sir Baudouin IX the Unreturned** | Fights the way you fight. He has had practice. |
 
+## Four regions, four shapes
+
+Each region generates its own silhouette, not just its own palette:
+
+| Region | Shape |
+|---|---|
+| The Siege Yards | Rooms and corridors — rectangles with paths trodden between them |
+| The Reliquary | Catacombs — many small chambers, packed tight, with more ways between them than you can hold in your head |
+| The Choir | Cathedral halls — few rooms, enormous ones, joined by two-tile aisles, with pillars standing in the open floor |
+| The Empty Tomb | Caves — cellular automata, not built by anyone |
+
+Every generator must hand back a fully connected floor. That invariant is what
+the rest of the game leans on, and the suite checks it across forty seeds per
+region.
+
+## Boss arenas
+
+A boss waits alone in a sealed room with exactly one door and the gate inside
+it. Walking into that door asks **"Are you sure you want to enter?"** and costs
+no turn if you say no. Say yes and the door bars behind you, the boss tells you
+what it is, and neither of you leaves until one of you is finished. Nothing else
+spawns in there — only what the Herald calls in — and you cannot blink out.
+
+Once the boss is dead the door is just a door again: walk back in for the loot,
+and nothing shuts behind you.
+
 ## The story
 
 Sir Baudouin IX went down first, before the crusade had a number. His story is
@@ -305,7 +348,7 @@ src/
     dijkstra.js    flood-fill pathfinding maps
   world/     terrain
     tiles.js       tile definitions, including the sealed gate
-    mapgen.js      rooms-and-corridors generation
+    mapgen.js      four region silhouettes, and the sealed boss arena
     level.js       one floor: terrain, entities, visibility
   game/      rules (no DOM anywhere -- this is why it is testable)
     game.js        state, turn scheduler, regions, gates, story triggers
@@ -332,7 +375,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    256 assertions, including a full run to depth 12
+tests/smoke.mjs    292 assertions, including a full run to depth 12
 ```
 
 ### Tone
@@ -353,8 +396,8 @@ flavour text define what the game *is*, with no changes needed anywhere in
 
 - **More AI shapes** — `ai.js` knows how to close and how to shoot; pack
   tactics, fleeing at low health, and monsters that open doors are all next
-- **Map generation** — catacomb mazes for the Reliquary, cathedral halls for
-  the Choir; `mapgen.js` is one generator where it should eventually be several
+- **Map generation** — prefab vaults, and terrain that does something (water,
+  rubble, collapsing floors) rather than only shaping the walk
 - **Deeper memorial** — graves you can pray at, predecessors who remember how
   you died, a revenant that fights the way you played
 - **Progression** — equipment that does something other than add numbers

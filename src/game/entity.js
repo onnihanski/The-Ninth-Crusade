@@ -31,6 +31,7 @@ export function makePlayer(x, y, name) {
     level: 1, xp: 0,
     inventory: [],
     seals: [],
+    merges: [],
     equipment: { weapon: null, shield: null, armour: null },
     isPlayer: true,
   });
@@ -88,12 +89,15 @@ export function makeRevenant(entry, x, y) {
   // They are still wearing it, so it still counts -- and it is still on them
   // when they go down again.
   const kitEntries = normaliseKit(entry.equipment);
-  const kit = kitEntries.map(({ key }) => ITEMS[key]).filter(Boolean);
-  const bonus = (field) => kit.reduce((sum, i) => sum + (i.equip?.[field] ?? 0), 0);
 
-  // A revenant is the crusader as they actually were: the stats they had
-  // levelled to, plus the kit they were wearing. The fallbacks cover memorial
-  // entries written before levelling existed.
+  // A revenant is the crusader as they actually were -- the stats they levelled
+  // to -- and nothing their equipment was doing for them.
+  //
+  // Their gear used to buff them as well as drop from them, which meant a
+  // predecessor who died in good armour came back as a wall on floor three,
+  // long before the crusader meeting them could field anything comparable.
+  // The kit keeps every point it ever had. It just does not lend them any.
+  // The fallbacks cover memorial entries written before levelling existed.
   const hp = entry.maxHp ?? 14 + depth * 3;
   const level = entry.level ?? 1;
 
@@ -102,10 +106,10 @@ export function makeRevenant(entry, x, y) {
     glyph: '@', color: 'revenant',
     name: 'the revenant of ' + entry.name,
     blocks: true,
-    speed: Math.max(40, 100 + bonus('speed')),
+    speed: 100,
     maxHp: hp, hp,
-    power: (entry.power ?? 4 + Math.floor(depth / 2)) + bonus('power'),
-    defense: (entry.defense ?? 1 + Math.floor(depth / 4)) + bonus('defense'),
+    power: entry.power ?? 4 + Math.floor(depth / 2),
+    defense: entry.defense ?? 1 + Math.floor(depth / 4),
     xp: 20 + depth * 8 + level * 10,
     drops: [
       ...(entry.relics ?? []).map((key) => ({ key, heirloom: null })),

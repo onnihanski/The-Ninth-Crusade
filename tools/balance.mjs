@@ -86,7 +86,17 @@ function stepToward(game, tx, ty) {
   if (dist[game.player.y * level.width + game.player.x] === UNREACHABLE) return false;
   const move = stepDownhill(dist, level.width, level.height, game.player.x, game.player.y, game.rng);
   if (!move) return false;
-  return moveOrAttack(game, game.player, move[0], move[1]);
+
+  const acted = moveOrAttack(game, game.player, move[0], move[1]);
+
+  // A boss door asks before it opens. The bot always says yes -- there is
+  // nothing else on a sealed floor for it to do.
+  if (!acted && game.prompt?.kind === 'enterArena') {
+    game.enterArena();
+    while (game.pendingStory()) game.dismissStory();
+    return true;
+  }
+  return acted;
 }
 
 function nearest(game, candidates) {
@@ -155,28 +165,31 @@ function playOne(seed, policy, memorial) {
     const loot = game.level.entities.filter((e) => e.item && wants(game, e));
     const here = game.level.itemsAt(game.player.x, game.player.y).filter((e) => wants(game, e));
 
+    // Once the door of a boss arena shuts, everything outside it is
+    // unreachable. Resolve a reachable target first, then decide.
+    const foe = monsters.length ? nearest(game, monsters) : null;
+    const prize = loot.length ? nearest(game, loot) : null;
+
     if (upgrade(game) || useRelics(game, monsters)) {
       acted = true;
     } else if (restIfSafe(game, monsters)) {
       acted = true;                          // waiting is an action
     } else if (here.length) {
       acted = pickUp(game, game.player) || true;   // never stall on a full pack
-    } else if (policy === 'clear' && monsters.length) {
-      acted = stepToward(game, nearest(game, monsters).x, nearest(game, monsters).y);
-    } else if (policy === 'clear' && loot.length) {
-      const target = nearest(game, loot);
-      acted = target ? stepToward(game, target.x, target.y) : false;
-    } else if (game.level.sealed) {
+    } else if (policy === 'clear' && foe) {
+      acted = stepToward(game, foe.x, foe.y);
+    } else if (policy === 'clear' && prize) {
+      acted = stepToward(game, prize.x, prize.y);
+    } else if (game.level.sealed || game.level.doorLocked) {
       // Sealed floor: the boss and its seal are the only way on.
-      const target = nearest(game, monsters.length ? monsters : loot);
+      const target = foe ?? prize;
       acted = target ? stepToward(game, target.x, target.y) : false;
     } else if (game.level.stairs) {
       const { x, y } = game.level.stairs;
       acted = (game.player.x === x && game.player.y === y) ? descend(game) : stepToward(game, x, y);
-    } else if (monsters.length) {
+    } else if (foe) {
       // Final floor: no way down but through.
-      const target = nearest(game, monsters);
-      acted = target ? stepToward(game, target.x, target.y) : false;
+      acted = stepToward(game, foe.x, foe.y);
     }
 
     if (!acted) {

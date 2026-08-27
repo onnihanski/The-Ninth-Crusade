@@ -18,13 +18,21 @@ const DEFENSE_EVERY = 3;  // levels
  * accumulation rather than by any single mistake. It also gives retreating a
  * point, which is most of what makes a roguelike tactical.
  */
+/** Merged phials shorten the wait between one point of healing and the next. */
+export function regenInterval(actor) {
+  const quickened = actor.merges
+    ? actor.merges.reduce((sum, m) => sum + (m.boon.stat === 'regen' ? m.boon.amount : 0), 0)
+    : 0;
+  return Math.max(6, REGEN_TURNS - quickened);
+}
+
 export function tickRegeneration(actor) {
   if (actor.hp >= actor.maxHp) {
     actor.regenTimer = 0;
     return;
   }
   actor.regenTimer = (actor.regenTimer ?? 0) + 1;
-  if (actor.regenTimer < REGEN_TURNS) return;
+  if (actor.regenTimer < regenInterval(actor)) return;
   actor.regenTimer = 0;
   actor.hp++;
 }
