@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Untitled Roguelike</title>
+<style>
+  :root {
+    --bg: #0a0c11;
+    --panel: #11141c;
+    --line: #222836;
+    --text: #c9d0dc;
+    --dim: #6d7688;
+    --mono: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  main { display: flex; gap: 16px; align-items: flex-start; max-width: 100%; }
+  #screen {
+    display: block;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    image-rendering: pixelated;
+    max-width: 100%;
+  }
+  aside {
+    width: 260px;
+    flex: none;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px;
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
+  #tagline { color: var(--dim); font-size: 11px; margin: 3px 0 14px; line-height: 1.4; }
+  section { margin-bottom: 14px; }
+  h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+  }
+  #depth { font-size: 13px; margin-bottom: 6px; }
+  #hp-bar {
+    height: 8px; background: #05070a; border-radius: 2px;
+    overflow: hidden; margin-bottom: 4px;
+  }
+  #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
+  #hp-text, #stats { color: var(--dim); font-size: 11px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  #inventory li, #help li { padding: 2px 0; font-size: 11px; }
+  #help li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); }
+  #inventory .empty { color: var(--dim); }
+  kbd {
+    font-family: inherit; font-size: 10px; background: #05070a;
+    border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; color: var(--text);
+  }
+  #log {
+    height: 190px; overflow-y: auto; font-size: 11px; line-height: 1.45;
+    border-top: 1px solid var(--line); padding-top: 8px;
+  }
+  #log li { margin-bottom: 2px; }
+  #log em { font-style: normal; color: var(--dim); }
+  #seed { color: var(--dim); font-size: 10px; margin-top: 12px; }
+  body.dead #screen { filter: saturate(0.35) brightness(0.75); }
+  @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="screen"></canvas>
+  <aside>
+    <h1 id="title"></h1>
+    <p id="tagline"></p>
+
+    <section>
+      <div id="depth"></div>
+      <div id="hp-bar"><div id="hp-fill"></div></div>
+      <div id="hp-text"></div>
+      <div id="stats"></div>
+    </section>
+
+    <section>
+      <h2>Pack</h2>
+      <ul id="inventory"></ul>
+    </section>
+
+    <section>
+      <h2>Keys</h2>
+      <ul id="help"></ul>
+    </section>
+
+    <ul id="log"></ul>
+    <div id="seed"></div>
+  </aside>
+</main>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
