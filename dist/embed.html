@@ -61,6 +61,43 @@
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
   ul { list-style: none; margin: 0; padding: 0; }
   #inventory li, #help li, #worn li { padding: 2px 0; font-size: 11px; }
+  #inventory li[data-item], #worn li[data-item] {
+    display: flex; align-items: baseline; gap: 6px; cursor: help;
+    border-radius: 2px; padding: 2px 3px; margin: 0 -3px;
+  }
+  #inventory li[data-item]:hover, #worn li[data-item]:hover,
+  #inventory li[data-item]:focus, #worn li[data-item]:focus {
+    background: #05070a; outline: none;
+  }
+  #inventory li[data-item]:focus-visible, #worn li[data-item]:focus-visible {
+    outline: 1px solid var(--dim);
+  }
+  .iname { flex: 1; }
+  .icat {
+    color: var(--dim); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; flex: none;
+  }
+  #tooltip {
+    position: fixed; z-index: 20; width: 264px; max-width: calc(100vw - 16px);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px 12px; pointer-events: none;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  }
+  #tooltip[hidden] { display: none; }
+  #tooltip h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; }
+  .tip-meta {
+    color: var(--dim); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 7px;
+  }
+  #tooltip ul { margin: 0 0 8px; }
+  #tooltip li {
+    font-size: 11px; line-height: 1.4; padding-left: 9px; position: relative;
+  }
+  #tooltip li::before { content: '·'; position: absolute; left: 0; color: var(--dim); }
+  .tip-lore {
+    margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--dim);
+    border-top: 1px solid var(--line); padding-top: 7px;
+  }
   #worn li { display: flex; gap: 8px; }
   #worn .slot { color: var(--dim); width: 52px; flex: none; }
   #worn .empty { color: var(--dim); }
@@ -132,6 +169,7 @@
     <div id="seed"></div>
   </aside>
 </main>
+<div id="tooltip" role="tooltip" aria-hidden="true" hidden></div>
 <script type="module">
 // ==== src/engine/rng.js ====================
 // Seeded PRNG (mulberry32).
@@ -267,6 +305,33 @@ function dijkstraMap(width, height, goals, isPassable) {
   }
 
   return dist;
+}
+
+/**
+ * Neighbour with the highest value: retreat. Archers use this to buy back the
+ * distance they need while they reload, which is what makes them worth
+ * fighting differently from everything else.
+ */
+function stepAway(dist, width, height, x, y, isPassable, rng) {
+  let best = dist[y * width + x];
+  let candidates = [];
+
+  for (const [dx, dy] of DIRS8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+    const value = dist[ny * width + nx];
+    if (value === UNREACHABLE || !isPassable(nx, ny)) continue;
+    if (value > best) {
+      best = value;
+      candidates = [[dx, dy]];
+    } else if (value === best && candidates.length) {
+      candidates.push([dx, dy]);
+    }
+  }
+
+  if (!candidates.length) return null;
+  return rng ? rng.pick(candidates) : candidates[0];
 }
 
 /** Neighbour with the lowest value, or null if nothing improves on here. */
@@ -504,7 +569,12 @@ class Level {
 
 // ==== src/data/items.js ====================
 // Relics are consumed; gear is worn. Both are pure data -- `use` is resolved in
-// game/effects.js and `equip` in game/status.js.
+// game/effects.js, `equip` in game/status.js, and `ranged` in game/combat.js.
+//
+// Every entry carries `flavour` (one line, shown when you pick it up) and
+// `lore` (a couple of sentences, shown when you hover it in the pack). Between
+// them they are the only place the world gets described at any length, so they
+// are worth writing properly.
 
 // Rarity is a spawn-frequency band and a colour, not a stat. It reads at a
 // glance on the floor, which is the whole point of colouring loot.
@@ -520,15 +590,15 @@ const RARITY_COLOR = {
  * thing carrying it, which is what makes bosses worth more than their seal.
  */
 function gear({ name, glyph, slot, rarity, power = 0, defense = 0, speed = 0,
-  minDepth = 1, weight = 0, flavour }) {
+  ranged = null, minDepth = 1, weight = 0, flavour, lore }) {
   return {
     name, glyph, rarity,
     color: RARITY_COLOR[rarity],
     bossOnly: rarity === 'sacred',
     weight: rarity === 'sacred' ? 0 : weight,
     minDepth,
-    equip: { slot, power, defense, speed },
-    flavour,
+    equip: { slot, power, defense, speed, ranged },
+    flavour, lore,
   };
 }
 
@@ -538,53 +608,116 @@ const ITEMS = {
     name: 'reliquary phial', glyph: '!', color: 'item',
     weight: 12, minDepth: 1, use: { kind: 'heal', amount: 10 },
     flavour: 'Contents: mostly saint.',
+    lore: 'Ground bone in consecrated water, bottled by an order that kept '
+      + 'excellent records and no explanations. It works. Nobody has ever '
+      + 'written down why.',
   },
   sparkOfTheChoir: {
     name: 'spark of the choir', glyph: '?', color: 'item',
     weight: 8, minDepth: 2, use: { kind: 'smite', amount: 12, range: 6 },
     flavour: 'One held note, released.',
+    lore: 'A single note from the Choir, caught in wax before it could finish. '
+      + 'Breaking the seal finishes it. Whatever it was aimed at when it was '
+      + 'sung is no longer the point.',
   },
   psalmOfWard: {
     name: 'psalm of ward', glyph: '?', color: 'item',
     weight: 7, minDepth: 3, use: { kind: 'ward', amount: 3, turns: 12 },
     flavour: 'Sung badly, it still works.',
+    lore: 'Twelve lines that make you harder to reach. The crusade issues them '
+      + 'to everyone and teaches the tune to nobody, on the theory that panic '
+      + 'carries a melody well enough.',
   },
   stepOfTheAbsent: {
     name: 'step of the absent', glyph: '?', color: 'item',
     weight: 6, minDepth: 4, use: { kind: 'blink' },
     flavour: 'The floor forgets you were standing on it.',
+    lore: 'A prayer for people who have decided to be elsewhere. It does not '
+      + 'ask where. It has never yet put anyone inside a wall, which the order '
+      + 'that made it considered sufficient testing.',
   },
 
-  // -- Weapons --------------------------------------------------------------
+  // -- Melee weapons --------------------------------------------------------
   armingSword: gear({
     name: 'arming sword', glyph: ')', slot: 'weapon', rarity: 'common',
     power: 2, minDepth: 1, weight: 12,
     flavour: 'Issued, not chosen.',
+    lore: 'Standard issue, stamped with a quartermaster\'s mark and the year, '
+      + 'which is older than you expected. It has killed things before. It is '
+      + 'not sentimental about it.',
   }),
   flangedMace: gear({
     name: 'flanged mace', glyph: ')', slot: 'weapon', rarity: 'common',
     power: 3, speed: -5, minDepth: 2, weight: 10,
     flavour: 'Technically not a blade, so technically permitted.',
+    lore: 'Clergy were forbidden to shed blood, so they carried these instead '
+      + 'and shed something else. The distinction mattered enormously to '
+      + 'everyone except the people on the receiving end.',
   }),
   pilgrimsFalchion: gear({
     name: "pilgrim's falchion", glyph: ')', slot: 'weapon', rarity: 'uncommon',
     power: 4, minDepth: 4, weight: 6,
     flavour: 'Carried a long way by someone who stopped.',
+    lore: 'Single-edged, heavy at the tip, made for people who walk further '
+      + 'than they fight. The grip is worn to the shape of a hand that is not '
+      + 'yours.',
   }),
   censerFlail: gear({
     name: 'censer flail', glyph: ')', slot: 'weapon', rarity: 'uncommon',
     power: 5, speed: -10, minDepth: 6, weight: 5,
     flavour: 'Swung wide, it still smells of the service.',
+    lore: 'A thurible on a longer chain than liturgy requires. Somewhere '
+      + 'between the third and fourth crusade, someone noticed how it moved '
+      + 'and stopped thinking about incense.',
   }),
   martyrsGreatsword: gear({
     name: "martyr's greatsword", glyph: ')', slot: 'weapon', rarity: 'rare',
     power: 7, speed: -25, minDepth: 8, weight: 3,
     flavour: 'Two hands, one conviction, no hurry.',
+    lore: 'Too long to draw in a corridor and too heavy to swing twice, which '
+      + 'has never once discouraged anyone. Every martyr it is named for died '
+      + 'holding it, and the name is plural.',
   }),
   heraldsPollaxe: gear({
     name: "the Herald's pollaxe", glyph: ')', slot: 'weapon', rarity: 'sacred',
     power: 6, speed: -5,
     flavour: 'He read your name off a list. This is the rest of the sentence.',
+    lore: 'Axe, hammer and spike on one shaft: an argument with three '
+      + 'conclusions. The Herald kept it immaculate and used it rarely, which '
+      + 'is the most frightening way to own a weapon.',
+  }),
+
+  // -- Ranged weapons -------------------------------------------------------
+  //
+  // These occupy the same slot as a sword and are nearly useless in it. The
+  // trade is the whole design: enormous damage at distance, a reload you have
+  // to buy with retreating, and almost nothing if something reaches you.
+  pilgrimsSling: gear({
+    name: "pilgrim's sling", glyph: '}', slot: 'weapon', rarity: 'common',
+    power: 1, ranged: { power: 4, range: 4, reload: 1 },
+    minDepth: 1, weight: 10,
+    flavour: 'A strap, a stone, and a great deal of confidence.',
+    lore: 'The cheapest ranged weapon in the world and the oldest. Pilgrims '
+      + 'carry them because they are legal everywhere and because there is '
+      + 'always another stone.',
+  }),
+  huntingCrossbow: gear({
+    name: 'hunting crossbow', glyph: '}', slot: 'weapon', rarity: 'uncommon',
+    power: 1, ranged: { power: 6, range: 6, reload: 2 },
+    minDepth: 3, weight: 7,
+    flavour: 'Made for deer. Adapted.',
+    lore: 'A hunting piece, not a war piece: light, quiet, and slow to crank. '
+      + 'It was requisitioned from a village that had been using it for its '
+      + 'intended purpose quite happily.',
+  }),
+  arbalest: gear({
+    name: 'arbalest', glyph: '}', slot: 'weapon', rarity: 'rare',
+    power: 2, ranged: { power: 9, range: 7, reload: 3 }, speed: -10,
+    minDepth: 7, weight: 3,
+    flavour: 'Punches through a wall\'s worth of argument.',
+    lore: 'Steel-limbed, cranked with a windlass, banned twice by councils '
+      + 'that had seen what it does and unbanned twice by people who had not. '
+      + 'Three turns to reload. Worth every one of them.',
   }),
 
   // -- Shields --------------------------------------------------------------
@@ -592,31 +725,49 @@ const ITEMS = {
     name: 'battered kite shield', glyph: '(', slot: 'shield', rarity: 'common',
     defense: 1, minDepth: 1, weight: 12,
     flavour: 'Someone else stopped something with this.',
+    lore: 'Long enough to cover a leg on horseback, which is of no use to you '
+      + 'at all. The splintering on the left side is the shape of something '
+      + 'that got through.',
   }),
   heaterShield: gear({
     name: 'heater shield', glyph: '(', slot: 'shield', rarity: 'common',
     defense: 2, speed: -5, minDepth: 3, weight: 10,
     flavour: 'Painted with a wall, badly.',
+    lore: 'Shorter and squarer than a kite, and much easier to walk with. The '
+      + 'device painted on it is the Third Wall, rendered by someone who had '
+      + 'clearly never seen it.',
   }),
   ossuaryBuckler: gear({
     name: 'ossuary buckler', glyph: '(', slot: 'shield', rarity: 'uncommon',
     defense: 2, speed: 5, minDepth: 5, weight: 6,
     flavour: 'Light, and it wants you to keep moving.',
+    lore: 'A fist-sized disc of bone laminate, no wider than the hand behind '
+      + 'it. It protects almost nothing and encourages you to be somewhere '
+      + 'else, which protects everything.',
   }),
   siegePavise: gear({
     name: 'siege pavise', glyph: '(', slot: 'shield', rarity: 'uncommon',
     defense: 3, speed: -15, minDepth: 5, weight: 5,
     flavour: 'A wall you have to carry.',
+    lore: 'Designed to be propped up so a crossbowman can reload behind it. '
+      + 'Carrying one by hand was never the intention and remains, on the '
+      + 'evidence, a bad idea done anyway.',
   }),
   towerShield: gear({
     name: 'tower shield', glyph: '(', slot: 'shield', rarity: 'rare',
     defense: 4, speed: -20, minDepth: 8, weight: 3,
     flavour: 'Behind this, very little happens to you. Slowly.',
+    lore: 'Chest to shin, banded in iron, heavy enough to change how you '
+      + 'stand. Men have won fights behind these by simply outlasting the '
+      + 'other person\'s patience.',
   }),
   aegisOfAmbrose: gear({
     name: 'aegis of Saint Ambrose', glyph: '(', slot: 'shield', rarity: 'sacred',
     defense: 4, speed: -5,
     flavour: 'It did not work for him either, but it took longer.',
+    lore: 'The saint was interred holding it and declined to let go. It weighs '
+      + 'a quarter of what it looks like, and the arm straps adjust themselves '
+      + 'to the wearer, which nobody has asked it to stop doing.',
   }),
 
   // -- Armour ---------------------------------------------------------------
@@ -624,49 +775,75 @@ const ITEMS = {
     name: 'padded gambeson', glyph: '[', slot: 'armour', rarity: 'common',
     defense: 1, minDepth: 1, weight: 12,
     flavour: 'Warm. That is the whole of it.',
+    lore: 'Twenty layers of linen quilted together, which stops more than it '
+      + 'has any right to. Everyone wears one under everything else. You are '
+      + 'wearing one under nothing else.',
   }),
   mailHauberk: gear({
     name: 'mail hauberk', glyph: '[', slot: 'armour', rarity: 'common',
     defense: 2, speed: -10, minDepth: 3, weight: 10,
     flavour: 'Four thousand rings, all of them yours to carry.',
+    lore: 'Riveted mail to the knee, the standard of three centuries. It '
+      + 'turns edges beautifully and does nothing whatever about being hit '
+      + 'with a mace, which is why maces caught on.',
   }),
   brigandine: gear({
     name: 'brigandine', glyph: '[', slot: 'armour', rarity: 'uncommon',
     defense: 3, speed: -12, minDepth: 5, weight: 6,
     flavour: 'Plates on the inside, so nobody can tell how frightened you are.',
+    lore: 'Small steel plates riveted between cloth, the rivet heads showing '
+      + 'in neat rows. From outside it is a coat. It is not a coat.',
   }),
   ossuaryPlate: gear({
     name: 'ossuary plate', glyph: '[', slot: 'armour', rarity: 'rare',
     defense: 4, speed: -25, minDepth: 7, weight: 4,
     flavour: 'Fitted to someone your size. He is not using it.',
+    lore: 'Full harness, taken off a rack in a room where the racks were '
+      + 'arranged by height. It fits you exactly, which is the part worth '
+      + 'thinking about, and then not thinking about.',
   }),
   sepulchreHarness: gear({
     name: 'sepulchre harness', glyph: '[', slot: 'armour', rarity: 'rare',
     defense: 5, speed: -30, minDepth: 10, weight: 2,
     flavour: 'It was buried with someone. It got up anyway.',
+    lore: 'Grave-goods, and heavy ones: the dead were not expected to walk in '
+      + 'this. Something has worn it since it was interred. The inside is '
+      + 'polished smooth.',
   }),
   vestmentOfTheChoir: gear({
     name: 'vestment of the choir', glyph: '[', slot: 'armour', rarity: 'sacred',
     defense: 5,
     flavour: 'Weightless. Whatever is holding it up is not the cloth.',
+    lore: 'Plain white wool, unadorned, of a weight that suggests nothing is '
+      + 'inside it. Blows land on it and stop. The wool does not move, and '
+      + 'neither does anything under the wool.',
   }),
 
   // -- Seals: not usable, only carried. Their whole function is opening gates.
   brassSeal: {
     name: 'brass seal', glyph: '=', color: 'seal', seal: 'siegeYards',
     flavour: 'Stamped with a wall that no longer exists.',
+    lore: 'The die that struck this was destroyed with the wall it depicts. '
+      + 'The gate below does not know that and would not care.',
   },
   silverSeal: {
     name: 'silver seal', glyph: '=', color: 'seal', seal: 'reliquary',
     flavour: 'Warm, which is not a thing silver does.',
+    lore: 'It was warm when Saint Ambrose was holding it and it has not cooled '
+      + 'since. The Reliquary catalogued it under "pending".',
   },
   goldSeal: {
     name: 'gold seal', glyph: '=', color: 'seal', seal: 'choir',
     flavour: 'It hums the note you have been trying to forget.',
+    lore: 'Soft enough to mark with a thumbnail, and marked all over. Every '
+      + 'crusader who carried it did the same thing while listening to it.',
   },
   theRelic: {
     name: 'the Relic', glyph: '*', color: 'notable', victory: true,
     flavour: 'You came a long way for this.',
+    lore: 'Nine crusades were called for this. The songs are longer than it '
+      + 'is. You are the one holding it now, and it is still not clear what '
+      + 'it is for.',
   },
 };
 
@@ -678,6 +855,61 @@ function itemTable(depth) {
 }
 
 const SLOTS = ['weapon', 'shield', 'armour'];
+
+/** Short label shown beside the item's name in the pack. */
+function itemCategory(spec) {
+  if (spec.seal) return 'seal';
+  if (spec.victory) return 'relic';
+  if (spec.use) return 'relic';
+  if (spec.equip?.ranged) return 'ranged';
+  return spec.equip?.slot ?? 'item';
+}
+
+/**
+ * Everything the hover panel needs, derived from the data rather than written
+ * twice: retuning a number in this file updates what the game says about it.
+ */
+function describeItem(spec) {
+  const effects = [];
+  const equip = spec.equip;
+
+  if (equip) {
+    if (equip.ranged) {
+      const r = equip.ranged;
+      effects.push('Shoots to ' + r.range + ' tiles for ' + r.power + ' damage');
+      effects.push('Reloads for ' + r.reload + ' turn' + (r.reload === 1 ? '' : 's') + ' after firing');
+      effects.push(equip.power + ' power in melee — it is not a sword');
+    } else if (equip.power) {
+      effects.push('+' + equip.power + ' power');
+    }
+    if (equip.defense) effects.push('+' + equip.defense + ' defense');
+    if (equip.speed) {
+      effects.push((equip.speed > 0 ? '+' : '') + equip.speed + ' speed'
+        + (equip.speed < 0 ? ' — heavier things cost you turns' : ' — lighter than nothing'));
+    }
+    effects.push('Worn in the ' + equip.slot + ' slot');
+  }
+
+  const use = spec.use;
+  if (use) {
+    if (use.kind === 'heal') effects.push('Restores ' + use.amount + ' hit points');
+    if (use.kind === 'smite') effects.push('Strikes the nearest thing you can see within ' + use.range + ' tiles for ' + use.amount);
+    if (use.kind === 'ward') effects.push('+' + use.amount + ' defense for ' + use.turns + ' turns');
+    if (use.kind === 'blink') effects.push('Moves you somewhere else on this floor');
+    effects.push('Spent on use');
+  }
+
+  if (spec.seal) effects.push('Opens this region\'s gate. Kept, never spent, and never takes pack space');
+  if (spec.victory) effects.push('Ends the crusade the moment you pick it up');
+
+  return {
+    name: spec.name,
+    category: itemCategory(spec),
+    rarity: spec.rarity ?? null,
+    effects,
+    lore: spec.lore ?? spec.flavour ?? '',
+  };
+}
 
 // ==== src/game/entity.js ===================
 // Entities are plain bags of optional fields rather than a class hierarchy.
@@ -732,6 +964,8 @@ function makeMonster(spec, x, y) {
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
     xp: spec.xp ?? 0,
+    ranged: spec.ranged ?? null,
+    reloadLeft: 0,
     boss: spec.boss ?? false,
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
@@ -847,6 +1081,33 @@ function effectiveSpeed(entity) {
   return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
 }
 
+/**
+ * How this actor shoots, if it does. The player's comes from the weapon in
+ * their hand; a monster carries its own, because a bone slinger is not holding
+ * a sling so much as being one.
+ */
+function rangedProfile(entity) {
+  const weapon = entity.equipment?.weapon;
+  return weapon?.item.equip.ranged ?? entity.ranged ?? null;
+}
+
+function canFire(entity) {
+  return !entity.reloadLeft;
+}
+
+/**
+ * Reload is counted in the actor's own turns, not the player's, so a fast
+ * archer really does shoot more often than a slow one. `reload: 2` means two
+ * turns spent not firing, no more -- the shot's own turn does not count.
+ */
+function startReload(entity, profile) {
+  entity.reloadLeft = profile.reload;
+}
+
+function tickReload(entity) {
+  if (entity.reloadLeft > 0) entity.reloadLeft--;
+}
+
 // ==== src/game/progress.js =================
 // Experience and levels.
 //
@@ -941,17 +1202,24 @@ function mitigate(rawDamage, defense) {
   return Math.max(MIN_DAMAGE, Math.round(rawDamage * kept));
 }
 
-function attack(game, attacker, defender) {
+/**
+ * `options.power` overrides the attacker's melee power (a shot uses the
+ * weapon's ranged figure, not the arm behind it) and `options.verb` names what
+ * happened. Everything else -- mitigation, death, drops, experience -- is
+ * shared, so a shot can never drift out of step with a swing.
+ */
+function attack(game, attacker, defender, options = {}) {
   if (defender.isPlayer) game.lastAttacker = article(attacker);
 
-  const power = effectivePower(attacker);
+  const power = options.power ?? effectivePower(attacker);
   const roll = game.rng.int(power - 1, power + 1);
   const dealt = mitigate(roll, effectiveDefense(defender));
   const absorbed = dealt <= MIN_DAMAGE && roll > MIN_DAMAGE;
 
   const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
   const object = defender.isPlayer ? 'you' : article(defender);
-  const verb = attacker.isPlayer ? 'hit' : 'hits';
+  const stem = options.verb ?? 'hit';
+  const verb = attacker.isPlayer ? stem : stem + 's';
 
   game.log(
     absorbed
@@ -990,6 +1258,12 @@ function damage(game, target, amount, source = null) {
   if (target.boss) game.onBossDefeated(target);
 }
 
+/** Loose a shot at something you can see. The caller has checked the range. */
+function shoot(game, attacker, defender, profile) {
+  attack(game, attacker, defender, { power: profile.power, verb: 'shoot' });
+  startReload(attacker, profile);
+}
+
 /** Proper nouns (bosses, revenants) do not take an article. */
 function article(entity) {
   return entity.properName || /^(the|What|Saint)\b/.test(entity.name)
@@ -1006,13 +1280,13 @@ function capitalize(s) {
 }
 
 // ==== src/game/ai.js =======================
-// Bare-bones hostile AI, and the most rewarding file in the project to grow:
-// ranged attackers, pack tactics, fleeing at low HP, monsters that open doors.
-//
-// The "can I see the player" test reuses the player's own FOV. That is a real
-// simplification (sight is symmetric here), and worth revisiting if monsters
-// ever get their own senses.
+// Monster behaviour. Two shapes so far: things that close, and things that
+// keep their distance and shoot. The "can I see the player" test reuses the
+// player's own FOV -- sight is symmetric in this game, which is a real
+// simplification and worth revisiting if monsters ever get their own senses.
 function takeAiTurn(game, monster) {
+  tickReload(monster);
+
   const level = game.level;
   const player = game.player;
   const canSeePlayer = level.visible.get(monster.x, monster.y);
@@ -1023,11 +1297,56 @@ function takeAiTurn(game, monster) {
     return;
   }
 
-  if (chebyshev(monster.x, monster.y, player.x, player.y) <= 1) {
+  const profile = rangedProfile(monster);
+  if (profile) {
+    takeShooterTurn(game, monster, profile, canSeePlayer);
+    return;
+  }
+
+  const distance = chebyshev(monster.x, monster.y, player.x, player.y);
+  if (distance <= 1) {
+    attack(game, monster, player);
+    return;
+  }
+  approach(game, monster);
+}
+
+// How often a cornered shooter chooses to skip back rather than swing. Not
+// every turn: an archer that always retreats is uncatchable at equal speed,
+// because you spend your turn closing and it spends its turn undoing that.
+const SKIP_BACK_CHANCE = 0.5;
+
+/**
+ * Archers want one specific distance: inside their range, outside your reach.
+ * They shoot when loaded, stand and crank when they are not, and fight badly
+ * with whatever they are holding once you arrive.
+ *
+ * Standing still to reload is the whole reason they are beatable. The first
+ * version gave ground on every reload turn, which at equal speed made the
+ * distance between you mathematically constant -- the balance harness went
+ * from a 34% win rate to zero. Reloading in place is what buys the player
+ * their approach, and turns a shooter into a problem with an answer.
+ */
+function takeShooterTurn(game, monster, profile, canSeePlayer) {
+  const player = game.player;
+  const distance = chebyshev(monster.x, monster.y, player.x, player.y);
+
+  if (distance <= 1) {
+    if (game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
     attack(game, monster, player);
     return;
   }
 
+  if (canSeePlayer && distance <= profile.range) {
+    if (canFire(monster)) shoot(game, monster, player, profile);
+    return;                                    // loaded or not, hold this spot
+  }
+
+  approach(game, monster);
+}
+
+function approach(game, monster) {
+  const level = game.level;
   const dist = game.playerDistanceMap();
   if (dist[monster.y * level.width + monster.x] === UNREACHABLE) {
     monster.ai.hunting = false;
@@ -1036,20 +1355,31 @@ function takeAiTurn(game, monster) {
 
   const step = stepDownhill(dist, level.width, level.height, monster.x, monster.y, game.rng);
   if (!step) return;
-  const [dx, dy] = step;
-  if (level.isOpen(monster.x + dx, monster.y + dy)) {
-    monster.x += dx;
-    monster.y += dy;
-  }
+  moveIfOpen(game, monster, step);
+}
+
+function retreat(game, monster) {
+  const level = game.level;
+  const dist = game.playerDistanceMap();
+  const step = stepAway(
+    dist, level.width, level.height, monster.x, monster.y,
+    (x, y) => level.isOpen(x, y), game.rng,
+  );
+  if (!step) return false;
+  return moveIfOpen(game, monster, step);
+}
+
+function moveIfOpen(game, monster, [dx, dy]) {
+  if (!game.level.isOpen(monster.x + dx, monster.y + dy)) return false;
+  monster.x += dx;
+  monster.y += dy;
+  return true;
 }
 
 function wander(game, monster) {
   if (!game.rng.chance(0.25)) return;
-  const [dx, dy] = game.rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]]);
-  if (game.level.isOpen(monster.x + dx, monster.y + dy)) {
-    monster.x += dx;
-    monster.y += dy;
-  }
+  const step = game.rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]]);
+  moveIfOpen(game, monster, step);
 }
 
 // ==== src/game/memorial.js =================
@@ -1153,7 +1483,10 @@ class Memorial {
 // `boss: true` is placed deliberately rather than rolled, and `drops` is a list
 // of item keys spilled on death.
 //
-//   speed   100 = one turn per player turn; 160 acts half again as often
+//   speed     100 = one turn per player turn; 160 acts half again as often
+//   minDepth  earliest floor it may be rolled on, within its region
+//   ranged    { power, range, reload } -- shoots instead of closing, and backs
+//             away when you get near. Nothing ranged appears on depth 1.
 const MONSTERS = {
   // -- The Siege Yards: mundane, tired, hungry -------------------------------
   campDog: {
@@ -1167,6 +1500,11 @@ const MONSTERS = {
   flagellant: {
     name: 'flagellant', glyph: 'f', color: 'monsterTough',
     weight: 7, maxHp: 10, power: 4, defense: 0, speed: 100, xp: 10,
+  },
+  crossbowman: {
+    name: 'deserter with a crossbow', glyph: 'x', color: 'monsterTough',
+    weight: 5, minDepth: 2, maxHp: 7, power: 2, defense: 0, speed: 100, xp: 16,
+    ranged: { power: 4, range: 5, reload: 3 },
   },
   herald: {
     name: 'the Herald of the Third Wall', glyph: 'H', color: 'boss',
@@ -1188,6 +1526,11 @@ const MONSTERS = {
     name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
     weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80, xp: 24,
   },
+  boneSlinger: {
+    name: 'bone slinger', glyph: 'b', color: 'monsterTough',
+    weight: 5, minDepth: 4, maxHp: 12, power: 3, defense: 1, speed: 100, xp: 26,
+    ranged: { power: 5, range: 5, reload: 3 },
+  },
   saintAmbrose: {
     name: 'Saint Ambrose, Who Would Not Stay Buried', glyph: 'S', color: 'boss',
     boss: true, maxHp: 44, power: 8, defense: 3, speed: 100, xp: 140,
@@ -1208,6 +1551,11 @@ const MONSTERS = {
     name: 'winged thing', glyph: 'A', color: 'monsterTough',
     weight: 5, maxHp: 16, power: 8, defense: 1, speed: 150, xp: 30,
   },
+  psalmist: {
+    name: 'psalmist', glyph: 'y', color: 'mythic',
+    weight: 4, minDepth: 7, maxHp: 16, power: 3, defense: 1, speed: 110, xp: 36,
+    ranged: { power: 6, range: 6, reload: 3 },
+  },
   theVoice: {
     name: 'the Voice in the Vaults', glyph: 'V', color: 'boss',
     boss: true, maxHp: 58, power: 10, defense: 4, speed: 115, xp: 220,
@@ -1216,8 +1564,8 @@ const MONSTERS = {
   },
 
   // -- The Empty Tomb: quiet, personal ---------------------------------------
-  aDoubt: {
-    name: 'a doubt', glyph: 'g', color: 'mythic',
+  graveWraith: {
+    name: 'grave wraith', glyph: 'w', color: 'mythic',
     weight: 10, maxHp: 18, power: 8, defense: 2, speed: 130, xp: 38,
   },
   pilgrimHusk: {
@@ -1228,6 +1576,11 @@ const MONSTERS = {
     name: 'sepulchre worm', glyph: 'W', color: 'monsterTough',
     weight: 5, maxHp: 34, power: 11, defense: 4, speed: 90, xp: 58,
   },
+  mourner: {
+    name: 'mourner', glyph: 'M', color: 'mythic',
+    weight: 4, minDepth: 10, maxHp: 20, power: 4, defense: 2, speed: 110, xp: 52,
+    ranged: { power: 8, range: 6, reload: 3 },
+  },
   whatYouCameFor: {
     name: 'What You Came For', glyph: '&', color: 'boss',
     boss: true, maxHp: 84, power: 12, defense: 5, speed: 110, xp: 400,
@@ -1237,8 +1590,15 @@ const MONSTERS = {
 };
 
 /** Weighted spawn table for a region's rank-and-file. */
-function monsterTable(region) {
-  return region.monsters.map((key) => ({ key, ...MONSTERS[key] }));
+/**
+ * What this region can field on this floor. `minDepth` keeps the ranged units
+ * off the opening floor, where being shot at by something you have not learned
+ * to close with yet is simply unfair.
+ */
+function monsterTable(region, depth) {
+  return region.monsters
+    .map((key) => ({ key, ...MONSTERS[key] }))
+    .filter((m) => depth >= (m.minDepth ?? 1));
 }
 
 // ==== src/data/regions.js ==================
@@ -1254,7 +1614,7 @@ const REGIONS = [
     name: 'The Siege Yards',
     arrival: 'Mud, and the smell of other people\'s campfires. The war was here recently and did not enjoy itself.',
     depths: [1, 3],
-    monsters: ['campDog', 'deserter', 'flagellant'],
+    monsters: ['campDog', 'deserter', 'flagellant', 'crossbowman'],
     boss: 'herald',
     palette: { wall: '#6a6156', floor: '#8b8071' },
   },
@@ -1263,7 +1623,7 @@ const REGIONS = [
     name: 'The Reliquary',
     arrival: 'Shelves of saints, filed by which part of them survived. Someone kept excellent records and then stopped.',
     depths: [4, 6],
-    monsters: ['bonepicker', 'reliquaryMoth', 'ossuaryWarden'],
+    monsters: ['bonepicker', 'reliquaryMoth', 'ossuaryWarden', 'boneSlinger'],
     boss: 'saintAmbrose',
     palette: { wall: '#5f5a63', floor: '#847d86' },
   },
@@ -1272,7 +1632,7 @@ const REGIONS = [
     name: 'The Choir',
     arrival: 'The singing has been going on longer than the building. You try not to learn the words.',
     depths: [7, 9],
-    monsters: ['chorister', 'censerbearer', 'wingedThing'],
+    monsters: ['chorister', 'censerbearer', 'wingedThing', 'psalmist'],
     boss: 'theVoice',
     palette: { wall: '#4d5a6b', floor: '#6f8199' },
   },
@@ -1281,7 +1641,7 @@ const REGIONS = [
     name: 'The Empty Tomb',
     arrival: 'It is empty in the way a held breath is empty. You are, at last, expected.',
     depths: [10, 12],
-    monsters: ['aDoubt', 'pilgrimHusk', 'sepulchreWorm'],
+    monsters: ['graveWraith', 'pilgrimHusk', 'sepulchreWorm', 'mourner'],
     boss: 'whatYouCameFor',
     final: true,
     palette: { wall: '#3f3a44', floor: '#5c5563' },
@@ -1499,7 +1859,7 @@ class Game {
 
   populate(depth) {
     const boss = isBossDepth(depth);
-    const monsters = monsterTable(this.region);
+    const monsters = monsterTable(this.region, depth);
     const relics = itemTable(depth);
     const rooms = this.level.rooms.slice(1); // room 0 is the player's one safe breath
     if (!rooms.length) return;
@@ -1650,6 +2010,7 @@ class Game {
     this.player.energy -= ACT_COST;
     this.turn++;
     tickStatuses(this, this.player);
+    tickReload(this.player);
     tickRegeneration(this.player);
     this.hintRegeneration();
     this.maybeWander();
@@ -1686,7 +2047,7 @@ class Game {
         while (actor.energy >= ACT_COST && actor.alive && this.player.alive) {
           actor.energy -= ACT_COST;
           tickStatuses(this, actor);
-          takeAiTurn(this, actor);
+          takeAiTurn(this, actor);   // ticks its own reload
         }
       }
       this._distCache = null;
@@ -1718,7 +2079,7 @@ class Game {
     if (depth < 2) return;
     if (this.wanderers >= 1 + Math.floor(depth / 3)) return;
 
-    const table = monsterTable(this.region);
+    const table = monsterTable(this.region, this.level.depth);
     for (let tries = 0; tries < 60; tries++) {
       const spot = this.randomOpenTile();
       if (!spot) return;
@@ -1872,6 +2233,47 @@ function moveOrAttack(game, actor, dx, dy) {
 
 function wait() {
   return true;
+}
+
+/**
+ * Shoot the nearest thing you can see inside your weapon's range. Auto-target
+ * rather than a cursor: with one shot every few turns, choosing the target is
+ * rarely the interesting decision -- choosing when to give ground is.
+ */
+function fire(game, actor) {
+  const profile = rangedProfile(actor);
+  if (!profile) {
+    game.log('You have nothing that shoots.', 'textDim');
+    return false;
+  }
+  if (!canFire(actor)) {
+    game.log('Still reloading.', 'textDim');
+    return false;
+  }
+
+  const target = nearestTargetInRange(game, actor, profile.range);
+  if (!target) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  shoot(game, actor, target, profile);
+  return true;
+}
+
+function nearestTargetInRange(game, actor, range) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const entity of game.level.entities) {
+    if (!entity.ai || !entity.alive) continue;
+    if (!game.level.visible.get(entity.x, entity.y)) continue;
+    const distance = chebyshev(actor.x, actor.y, entity.x, entity.y);
+    if (distance <= range && distance < bestDistance) {
+      best = entity;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 function pickUp(game, actor) {
@@ -2133,6 +2535,7 @@ function keyToIntent(event) {
   if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
   if (key === 'x') return { type: 'drop' };
+  if (key === 'f') return { type: 'fire' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -2142,6 +2545,7 @@ const HELP = [
   ['move', 'W A S D'],
   ['diagonals', 'Q E Z C'],
   ['wait', 'space'],
+  ['fire', 'f'],
   ['take', 'g'],
   ['use / wear', '1-9'],
   ['drop', 'x then 1-9'],
@@ -2158,9 +2562,13 @@ class Panel {
     this.el = {};
     for (const id of ['depth', 'region', 'hp-fill', 'hp-text', 'stats', 'statuses',
       'inventory', 'worn', 'seals', 'log', 'seed', 'help', 'title', 'tagline', 'crusader',
-      'level', 'xp-fill', 'xp-text']) {
+      'level', 'xp-fill', 'xp-text', 'tooltip']) {
       this.el[id] = root.querySelector('#' + id);
     }
+
+    // The pack and kit lists are rebuilt only when their contents change, so a
+    // tooltip does not blink out from under the pointer every turn.
+    this.kitSignature = null;
 
     this.el.title.textContent = theme.name;
     this.el.tagline.textContent = theme.tagline;
@@ -2195,30 +2603,19 @@ class Panel {
     this.el.stats.innerHTML =
       stat('power', effectivePower(p), p.power, colors)
       + stat('defense', effectiveDefense(p), p.defense, colors)
-      + stat('speed', speed, 100, colors);
+      + stat('speed', speed, 100, colors)
+      + (rangedProfile(p)
+        ? '<span class="stat">' + (p.reloadLeft > 0
+          ? '<b style="color:' + colors.bad + '">reloading</b>'
+          : '<b style="color:' + colors.good + '">loaded</b>') + '</span>'
+        : '');
 
     this.el.statuses.innerHTML = (p.statuses ?? [])
       .map((s) => '<span class="tag" style="color:' + colors.good + '">'
         + s.kind + ' +' + s.amount + ' (' + s.turns + ')</span>')
       .join(' ');
 
-    this.el.inventory.innerHTML = p.inventory.length
-      ? p.inventory.map((item, i) => {
-        const color = colors[item.color] ?? colors.text;
-        return '<li><kbd>' + (i + 1) + '</kbd> '
-          + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span></li>';
-      }).join('')
-      : '<li class="empty">(empty)</li>';
-
-    const SLOTS = [['weapon', 'held'], ['shield', 'shield'], ['armour', 'worn']];
-    this.el.worn.innerHTML = SLOTS.map(([slot, label]) => {
-      const item = p.equipment?.[slot];
-      const value = item
-        ? '<span style="color:' + (colors[item.color] ?? colors.gear) + '">'
-          + escapeHtml(item.name) + '</span>'
-        : '<span class="empty">—</span>';
-      return '<li><span class="slot">' + label + '</span>' + value + '</li>';
-    }).join('');
+    this.renderKit(game, colors);
 
     const seals = game.seals();
     this.el.seals.innerHTML = seals.length
@@ -2240,12 +2637,96 @@ class Panel {
   }
 }
 
+const SLOT_LABEL = { weapon: 'held', shield: 'shield', armour: 'worn' };
+
 /** A stat, with its modified value called out when gear has changed it. */
 function stat(label, value, base, colors) {
   const color = value === base ? colors.textDim : value > base ? colors.good : colors.bad;
   return '<span class="stat">' + label
     + ' <b style="color:' + color + '">' + value + '</b></span>';
 }
+
+Panel.prototype.renderKit = function renderKit(game, colors) {
+  const p = game.player;
+  const signature = p.inventory.map((i) => i.item.key).join(',')
+    + '|' + SLOTS.map((slot) => p.equipment[slot]?.item.key ?? '-').join(',');
+  if (signature === this.kitSignature) return;
+  this.kitSignature = signature;
+
+  this.el.worn.innerHTML = SLOTS.map((slot) => {
+    const item = p.equipment[slot];
+    const label = '<span class="slot">' + SLOT_LABEL[slot] + '</span>';
+    if (!item) return '<li>' + label + '<span class="empty">—</span></li>';
+    const color = colors[item.color] ?? colors.gear;
+    return '<li data-item="' + item.item.key + '" tabindex="0">' + label
+      + '<span style="color:' + color + '">' + escapeHtml(item.name) + '</span></li>';
+  }).join('');
+
+  this.el.inventory.innerHTML = p.inventory.length
+    ? p.inventory.map((item, i) => {
+      const spec = ITEMS[item.item.key] ?? item.item;
+      const color = colors[item.color] ?? colors.text;
+      return '<li data-item="' + item.item.key + '" tabindex="0">'
+        + '<kbd>' + (i + 1) + '</kbd> '
+        + '<span class="iname" style="color:' + color + '">' + escapeHtml(item.name) + '</span>'
+        + '<span class="icat">' + escapeHtml(itemCategory(spec)) + '</span></li>';
+    }).join('')
+    : '<li class="empty">(empty)</li>';
+
+  this.bindTooltips(colors);
+};
+
+/**
+ * Hovering an item explains what it does and where it came from. The mechanics
+ * half is derived from the item data rather than written out again, so it can
+ * never drift from what the game actually does.
+ */
+Panel.prototype.bindTooltips = function bindTooltips(colors) {
+  const tip = this.el.tooltip;
+  const rows = [
+    ...this.el.inventory.querySelectorAll('[data-item]'),
+    ...this.el.worn.querySelectorAll('[data-item]'),
+  ];
+
+  const show = (row) => {
+    const spec = ITEMS[row.dataset.item];
+    if (!spec) return;
+    const d = describeItem(spec);
+    const meta = [d.category, d.rarity].filter(Boolean).join(' · ');
+    tip.innerHTML =
+      '<h3 style="color:' + (colors[spec.color] ?? colors.text) + '">'
+      + escapeHtml(d.name) + '</h3>'
+      + '<div class="tip-meta">' + escapeHtml(meta) + '</div>'
+      + '<ul>' + d.effects.map((e) => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul>'
+      + '<p class="tip-lore">' + escapeHtml(d.lore) + '</p>';
+    tip.hidden = false;
+    tip.setAttribute('aria-hidden', 'false');
+
+    // Sits to the left of the panel, clamped into the viewport.
+    const rect = row.getBoundingClientRect();
+    const box = tip.getBoundingClientRect();
+    const left = Math.max(8, rect.left - box.width - 12);
+    const top = Math.min(
+      Math.max(8, rect.top - 8),
+      Math.max(8, window.innerHeight - box.height - 8),
+    );
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  };
+
+  const hide = () => {
+    tip.hidden = true;
+    tip.setAttribute('aria-hidden', 'true');
+  };
+
+  for (const row of rows) {
+    row.addEventListener('mouseenter', () => show(row));
+    row.addEventListener('focus', () => show(row));
+    row.addEventListener('mouseleave', hide);
+    row.addEventListener('blur', hide);
+  }
+  hide();
+};
 
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -2280,7 +2761,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
 
 newGame();
 
@@ -2299,6 +2780,7 @@ globalThis.document?.fonts?.ready.then(redraw);
     case 'move': acted = moveOrAttack(game, game.player, intent.dx, intent.dy); break;
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
+    case 'fire': acted = fire(game, game.player); break;
     case 'use':
       acted = wasPendingDrop
         ? dropItem(game, game.player, intent.index)
@@ -2325,7 +2807,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
 
 newGame();
 </script>

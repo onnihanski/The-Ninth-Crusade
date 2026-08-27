@@ -1,14 +1,15 @@
 import { chebyshev } from '../engine/grid.js';
-import { stepDownhill, UNREACHABLE } from '../engine/dijkstra.js';
-import { attack } from './combat.js';
+import { stepDownhill, stepAway, UNREACHABLE } from '../engine/dijkstra.js';
+import { attack, shoot } from './combat.js';
+import { rangedProfile, canFire, tickReload } from './status.js';
 
-// Bare-bones hostile AI, and the most rewarding file in the project to grow:
-// ranged attackers, pack tactics, fleeing at low HP, monsters that open doors.
-//
-// The "can I see the player" test reuses the player's own FOV. That is a real
-// simplification (sight is symmetric here), and worth revisiting if monsters
-// ever get their own senses.
+// Monster behaviour. Two shapes so far: things that close, and things that
+// keep their distance and shoot. The "can I see the player" test reuses the
+// player's own FOV -- sight is symmetric in this game, which is a real
+// simplification and worth revisiting if monsters ever get their own senses.
 export function takeAiTurn(game, monster) {
+  tickReload(monster);
+
   const level = game.level;
   const player = game.player;
   const canSeePlayer = level.visible.get(monster.x, monster.y);
@@ -19,11 +20,56 @@ export function takeAiTurn(game, monster) {
     return;
   }
 
-  if (chebyshev(monster.x, monster.y, player.x, player.y) <= 1) {
+  const profile = rangedProfile(monster);
+  if (profile) {
+    takeShooterTurn(game, monster, profile, canSeePlayer);
+    return;
+  }
+
+  const distance = chebyshev(monster.x, monster.y, player.x, player.y);
+  if (distance <= 1) {
+    attack(game, monster, player);
+    return;
+  }
+  approach(game, monster);
+}
+
+// How often a cornered shooter chooses to skip back rather than swing. Not
+// every turn: an archer that always retreats is uncatchable at equal speed,
+// because you spend your turn closing and it spends its turn undoing that.
+const SKIP_BACK_CHANCE = 0.5;
+
+/**
+ * Archers want one specific distance: inside their range, outside your reach.
+ * They shoot when loaded, stand and crank when they are not, and fight badly
+ * with whatever they are holding once you arrive.
+ *
+ * Standing still to reload is the whole reason they are beatable. The first
+ * version gave ground on every reload turn, which at equal speed made the
+ * distance between you mathematically constant -- the balance harness went
+ * from a 34% win rate to zero. Reloading in place is what buys the player
+ * their approach, and turns a shooter into a problem with an answer.
+ */
+function takeShooterTurn(game, monster, profile, canSeePlayer) {
+  const player = game.player;
+  const distance = chebyshev(monster.x, monster.y, player.x, player.y);
+
+  if (distance <= 1) {
+    if (game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
     attack(game, monster, player);
     return;
   }
 
+  if (canSeePlayer && distance <= profile.range) {
+    if (canFire(monster)) shoot(game, monster, player, profile);
+    return;                                    // loaded or not, hold this spot
+  }
+
+  approach(game, monster);
+}
+
+function approach(game, monster) {
+  const level = game.level;
   const dist = game.playerDistanceMap();
   if (dist[monster.y * level.width + monster.x] === UNREACHABLE) {
     monster.ai.hunting = false;
@@ -32,18 +78,29 @@ export function takeAiTurn(game, monster) {
 
   const step = stepDownhill(dist, level.width, level.height, monster.x, monster.y, game.rng);
   if (!step) return;
-  const [dx, dy] = step;
-  if (level.isOpen(monster.x + dx, monster.y + dy)) {
-    monster.x += dx;
-    monster.y += dy;
-  }
+  moveIfOpen(game, monster, step);
+}
+
+function retreat(game, monster) {
+  const level = game.level;
+  const dist = game.playerDistanceMap();
+  const step = stepAway(
+    dist, level.width, level.height, monster.x, monster.y,
+    (x, y) => level.isOpen(x, y), game.rng,
+  );
+  if (!step) return false;
+  return moveIfOpen(game, monster, step);
+}
+
+function moveIfOpen(game, monster, [dx, dy]) {
+  if (!game.level.isOpen(monster.x + dx, monster.y + dy)) return false;
+  monster.x += dx;
+  monster.y += dy;
+  return true;
 }
 
 function wander(game, monster) {
   if (!game.rng.chance(0.25)) return;
-  const [dx, dy] = game.rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]]);
-  if (game.level.isOpen(monster.x + dx, monster.y + dy)) {
-    monster.x += dx;
-    monster.y += dy;
-  }
+  const step = game.rng.pick([[0, -1], [1, 0], [0, 1], [-1, 0]]);
+  moveIfOpen(game, monster, step);
 }

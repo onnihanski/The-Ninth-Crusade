@@ -1,8 +1,9 @@
 import { Game } from './game/game.js';
-import { makeItem } from './game/entity.js';
+import { makeItem, makeMonster } from './game/entity.js';
 import { ITEMS } from './data/items.js';
+import { MONSTERS } from './data/monsters.js';
 import { gainXp } from './game/progress.js';
-import { moveOrAttack, wait, pickUp, useItem, dropItem, descend } from './game/actions.js';
+import { moveOrAttack, wait, pickUp, useItem, dropItem, fire, descend } from './game/actions.js';
 import { Memorial, browserStorage } from './game/memorial.js';
 import { THEME } from './data/theme.js';
 import { Renderer } from './ui/render.js';
@@ -37,7 +38,7 @@ function redraw() {
 function handleIntent(intent) {
   if (intent.type === 'restart') {
     // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
 
 newGame();
 
@@ -56,6 +57,7 @@ globalThis.document?.fonts?.ready.then(redraw);
     case 'move': acted = moveOrAttack(game, game.player, intent.dx, intent.dy); break;
     case 'wait': acted = wait(); break;
     case 'pickup': acted = pickUp(game, game.player); break;
+    case 'fire': acted = fire(game, game.player); break;
     case 'use':
       acted = wasPendingDrop
         ? dropItem(game, game.player, intent.index)
@@ -82,6 +84,6 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Debug hook: poke at the live game from the browser console.
-globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, ITEMS, gainXp };
+globalThis.crusade = { get game() { return game; }, memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp };
 
 newGame();

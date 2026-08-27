@@ -51,6 +51,8 @@ export function makeMonster(spec, x, y) {
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
     xp: spec.xp ?? 0,
+    ranged: spec.ranged ?? null,
+    reloadLeft: 0,
     boss: spec.boss ?? false,
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting

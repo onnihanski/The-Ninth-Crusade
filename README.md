@@ -42,6 +42,7 @@ node tests/smoke.mjs
 | Move        | `W` `A` `S` `D` (or arrows)     |
 | Diagonals   | `Q` `E` `Z` `C` (or numpad)     |
 | Wait        | space or `.`                  |
+| Fire        | `f`                           |
 | Take        | `g`                           |
 | Use / wear  | `1`–`9`                       |
 | Drop        | `x` then `1`–`9`               |
@@ -80,6 +81,23 @@ Health also comes back slowly on its own, one point every twenty turns. That
 makes retreating worth doing — and it is exactly why something else wanders
 onto the floor every so often. Resting is a decision, not a formality.
 
+## Shooting
+
+Ranged weapons take the same slot as a sword and are nearly useless in it. That
+is the trade: a **pilgrim's sling**, a **hunting crossbow** or an **arbalest**
+hits far harder at distance and leaves you holding a stick when something
+arrives. `f` shoots the nearest thing you can see in range, then the weapon
+reloads for a fixed number of your turns — the panel says *loaded* or
+*reloading*.
+
+Every region fields something that shoots back, from the second floor down: a
+deserter with a crossbow, a bone slinger, a psalmist, a mourner. They shoot when
+loaded and **stand still while they reload**, which is what makes them
+beatable — walk at them and you eat a shot or two before you arrive, and then
+they are holding a crossbow in a knife fight.
+
+Nothing that shoots appears on depth 1.
+
 ## Arms and armour
 
 Three slots — one weapon, one shield, one body — and six pieces for each, in
@@ -91,7 +109,9 @@ four rarities you can read off the colour before you pick anything up:
 - <b>sacred</b> — never spawns anywhere. A boss is carrying it.
 
 Press the pack slot to wear or wield what is in it; whatever it displaces goes
-straight back in the pack, so swapping never destroys a piece.
+straight back in the pack, so swapping never destroys a piece. Hovering anything
+in the pack or the kit opens a brief: what it does, in numbers derived from the
+game's own data, and where it came from.
 
 Nothing is a straight upgrade. The heavy things cost **speed**, and speed is
 turns: ossuary plate and a martyr's greatsword nearly double your damage and
@@ -125,15 +145,28 @@ node tools/balance.mjs 250
 
 It runs two policies — `clear` (fights the floor, takes the loot, then descends)
 and `dive` (fights what is in the way and little else). As of the current
-numbers, a thorough crusader wins about **34%** of the time, reaches a median
-depth of 10 at a median level of 11, and dies on every floor of the dungeon
-rather than piling up against one wall. A hurried one dies at the first boss,
+numbers, a thorough crusader wins about **28%** of the time, reaches a median
+depth of 9 at a median level of 10, and dies on every floor of the dungeon
+rather than piling up against one wall. The harness plays melee only and never
+picks up a bow, so it is a floor on the real number, not the number. A hurried one dies at the first boss,
 every time, which is the intended lesson.
 
 Re-run it after touching any number in `data/` or `progress.js`. It has caught
-four things that reading the code did not: fourteen monsters on depth 1, a
+five things that reading the code did not: fourteen monsters on depth 1, a
 defense stat that outran every monster in the game, a softlock where a full
-pack made a boss floor impossible to leave, and the difficulty spiral below.
+pack made a boss floor impossible to leave, the difficulty spiral below, and an
+archer that could never be caught.
+
+### Archers, and why they stand still
+
+The first shooter AI gave ground on every reload turn. At equal speed that makes
+the distance between you and it *mathematically constant* — you spend your turn
+closing, it spends its turn undoing that — so it shoots forever and you never
+arrive. The harness went from a 34% win rate to **zero**.
+
+Shooters now hold their ground while they reload. That single turn of standing
+still is what buys the player their approach, and it is the difference between
+a tactical problem and a wall.
 
 ### Difficulty
 
@@ -203,7 +236,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    120 assertions, including a full run to depth 12
+tests/smoke.mjs    158 assertions, including a full run to depth 12
 ```
 
 ### Tone
@@ -222,8 +255,8 @@ flavour text define what the game *is*, with no changes needed anywhere in
 
 ## Where to grow it
 
-- **Ranged and special attacks** — `ai.js` only knows how to walk up and hit
-  things; crossbows, breath weapons and spellcasters all want a turn here
+- **More AI shapes** — `ai.js` knows how to close and how to shoot; pack
+  tactics, fleeing at low health, and monsters that open doors are all next
 - **Map generation** — catacomb mazes for the Reliquary, cathedral halls for
   the Choir; `mapgen.js` is one generator where it should eventually be several
 - **Deeper memorial** — graves you can pray at, predecessors who remember how

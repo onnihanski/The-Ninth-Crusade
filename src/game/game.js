@@ -5,7 +5,7 @@ import { Level } from '../world/level.js';
 import { Tiles } from '../world/tiles.js';
 import { makePlayer, makeMonster, makeItem, makeRevenant } from './entity.js';
 import { takeAiTurn } from './ai.js';
-import { tickStatuses, effectiveSpeed, equipped } from './status.js';
+import { tickStatuses, tickReload, effectiveSpeed, equipped } from './status.js';
 import { tickRegeneration } from './progress.js';
 import { Memorial } from './memorial.js';
 import { MONSTERS, monsterTable } from '../data/monsters.js';
@@ -108,7 +108,7 @@ export class Game {
 
   populate(depth) {
     const boss = isBossDepth(depth);
-    const monsters = monsterTable(this.region);
+    const monsters = monsterTable(this.region, depth);
     const relics = itemTable(depth);
     const rooms = this.level.rooms.slice(1); // room 0 is the player's one safe breath
     if (!rooms.length) return;
@@ -259,6 +259,7 @@ export class Game {
     this.player.energy -= ACT_COST;
     this.turn++;
     tickStatuses(this, this.player);
+    tickReload(this.player);
     tickRegeneration(this.player);
     this.hintRegeneration();
     this.maybeWander();
@@ -295,7 +296,7 @@ export class Game {
         while (actor.energy >= ACT_COST && actor.alive && this.player.alive) {
           actor.energy -= ACT_COST;
           tickStatuses(this, actor);
-          takeAiTurn(this, actor);
+          takeAiTurn(this, actor);   // ticks its own reload
         }
       }
       this._distCache = null;
@@ -327,7 +328,7 @@ export class Game {
     if (depth < 2) return;
     if (this.wanderers >= 1 + Math.floor(depth / 3)) return;
 
-    const table = monsterTable(this.region);
+    const table = monsterTable(this.region, this.level.depth);
     for (let tries = 0; tries < 60; tries++) {
       const spot = this.randomOpenTile();
       if (!spot) return;

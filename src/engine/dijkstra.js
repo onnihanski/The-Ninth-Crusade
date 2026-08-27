@@ -39,6 +39,33 @@ export function dijkstraMap(width, height, goals, isPassable) {
   return dist;
 }
 
+/**
+ * Neighbour with the highest value: retreat. Archers use this to buy back the
+ * distance they need while they reload, which is what makes them worth
+ * fighting differently from everything else.
+ */
+export function stepAway(dist, width, height, x, y, isPassable, rng) {
+  let best = dist[y * width + x];
+  let candidates = [];
+
+  for (const [dx, dy] of DIRS8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+    const value = dist[ny * width + nx];
+    if (value === UNREACHABLE || !isPassable(nx, ny)) continue;
+    if (value > best) {
+      best = value;
+      candidates = [[dx, dy]];
+    } else if (value === best && candidates.length) {
+      candidates.push([dx, dy]);
+    }
+  }
+
+  if (!candidates.length) return null;
+  return rng ? rng.pick(candidates) : candidates[0];
+}
+
 /** Neighbour with the lowest value, or null if nothing improves on here. */
 export function stepDownhill(dist, width, height, x, y, rng) {
   let best = dist[y * width + x];

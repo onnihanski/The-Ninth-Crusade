@@ -60,3 +60,30 @@ export function effectiveDefense(entity) {
 export function effectiveSpeed(entity) {
   return Math.max(MIN_SPEED, entity.speed + gearBonus(entity, 'speed'));
 }
+
+/**
+ * How this actor shoots, if it does. The player's comes from the weapon in
+ * their hand; a monster carries its own, because a bone slinger is not holding
+ * a sling so much as being one.
+ */
+export function rangedProfile(entity) {
+  const weapon = entity.equipment?.weapon;
+  return weapon?.item.equip.ranged ?? entity.ranged ?? null;
+}
+
+export function canFire(entity) {
+  return !entity.reloadLeft;
+}
+
+/**
+ * Reload is counted in the actor's own turns, not the player's, so a fast
+ * archer really does shoot more often than a slow one. `reload: 2` means two
+ * turns spent not firing, no more -- the shot's own turn does not count.
+ */
+export function startReload(entity, profile) {
+  entity.reloadLeft = profile.reload;
+}
+
+export function tickReload(entity) {
+  if (entity.reloadLeft > 0) entity.reloadLeft--;
+}

@@ -2,19 +2,21 @@
 // Catches what is painful to find by clicking around a browser -- scheduler
 // deadlocks, unreachable gates, AI walking into walls, memorial corruption.
 import { Game } from '../src/game/game.js';
-import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, descend } from '../src/game/actions.js';
+import { moveOrAttack, wait, pickUp, useItem, equipItem, unequip, dropItem, fire, descend } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
-import { makeItem } from '../src/game/entity.js';
+import { makeItem, makeMonster } from '../src/game/entity.js';
 import { attack } from '../src/game/combat.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { Tiles } from '../src/world/tiles.js';
-import { effectivePower, effectiveDefense, effectiveSpeed } from '../src/game/status.js';
+import { effectivePower, effectiveDefense, effectiveSpeed, rangedProfile, canFire } from '../src/game/status.js';
 import { keyToIntent } from '../src/ui/input.js';
 import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate } from '../src/game/combat.js';
-import { MONSTERS } from '../src/data/monsters.js';
+import { MONSTERS, monsterTable } from '../src/data/monsters.js';
+import { takeAiTurn } from '../src/game/ai.js';
+import { chebyshev } from '../src/engine/grid.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
-import { ITEMS, itemTable, SLOTS } from '../src/data/items.js';
+import { ITEMS, itemTable, SLOTS, itemCategory, describeItem } from '../src/data/items.js';
 import { gainXp } from '../src/game/progress.js';
 import { MAX_PACK } from '../src/game/actions.js';
 
@@ -629,6 +631,209 @@ section('the pack');
   check('and it still opens the gate', h.level.sealed === false);
   check('seals never consume pack space',
     h.player.inventory.every((i) => !i.item.seal) && h.player.inventory.length === MAX_PACK);
+}
+
+// --- ranged weapons --------------------------------------------------------
+section('ranged weapons');
+{
+  const g = new Game({ seed: 8080, memorial: new Memorial() });
+  const p = g.player;
+  // A clear room to shoot across.
+  const room = g.level.rooms[0];
+  g.level.entities.filter((e) => e.ai).forEach((e) => g.level.remove(e));
+  p.x = room.x + 1;
+  p.y = room.cy;
+
+  check('bare hands cannot shoot', rangedProfile(p) === null && fire(g, p) === false);
+
+  p.equipment.weapon = makeItem({ key: 'huntingCrossbow', ...ITEMS.huntingCrossbow }, 0, 0);
+  const profile = rangedProfile(p);
+  check('a crossbow gives you a ranged profile', profile.range === 6 && profile.power === 6);
+  check('shooting at nothing is refused and costs no turn', fire(g, p) === false);
+
+  // Put a target inside range, in sight.
+  const target = makeMonster({ ...MONSTERS.deserter, maxHp: 200, hp: 200 }, p.x + 4, p.y);
+  g.level.add(target);
+  g.level.updateFov(p, g.theme.fovRadius);
+  const hpBefore = target.hp;
+  check('you can shoot something four tiles away', fire(g, p) === true);
+  check('the shot does damage without closing',
+    target.hp < hpBefore && chebyshev(p.x, p.y, target.x, target.y) === 4);
+  check('the log says you shot it',
+    g.messages.some((m) => m.text.includes('You shoot')));
+
+  check('firing starts a reload', !canFire(p));
+  check('you cannot fire while reloading', fire(g, p) === false);
+
+  let turns = 0;
+  while (!canFire(p) && turns < 20) { g.playerActed(); turns++; }
+  check('the reload takes exactly the weapon\'s stated turns (' + turns + ')',
+    turns === ITEMS.huntingCrossbow.equip.ranged.reload);
+  check('and then you can shoot again', fire(g, p) === true);
+
+  // Out of range is out of range, even in plain sight.
+  const far = makeMonster({ ...MONSTERS.deserter, maxHp: 50, hp: 50 }, p.x + 4, p.y);
+  g.level.remove(target);
+  g.level.add(far);
+  p.reloadLeft = 0;
+  far.x = Math.min(g.level.width - 2, p.x + profile.range + 3);
+  g.level.updateFov(p, g.theme.fovRadius);
+  check('nothing beyond the weapon\'s range can be shot', fire(g, p) === false);
+}
+
+section('ranged weapons are a trade');
+{
+  const ranged = Object.entries(ITEMS).filter(([, i]) => i.equip?.ranged);
+  check('there is a ranged option at three rarities',
+    new Set(ranged.map(([, i]) => i.rarity)).size >= 3);
+  check('ranged weapons are feeble in melee', ranged.every(([, i]) =>
+    i.equip.power <= 2));
+  check('every ranged weapon out-damages its own melee', ranged.every(([, i]) =>
+    i.equip.ranged.power > i.equip.power));
+  check('every ranged weapon has a reload to pay for it', ranged.every(([, i]) =>
+    i.equip.ranged.reload >= 1));
+  check('they compete for the weapon slot with swords', ranged.every(([, i]) =>
+    i.equip.slot === 'weapon'));
+  check('the strongest shot has the longest reload', (() => {
+    const sorted = [...ranged].sort((a, b) => a[1].equip.ranged.power - b[1].equip.ranged.power);
+    return sorted[sorted.length - 1][1].equip.ranged.reload
+      >= sorted[0][1].equip.ranged.reload;
+  })());
+}
+
+// --- shooter AI ------------------------------------------------------------
+section('monsters that shoot');
+{
+  check('every region fields something ranged by its last floor',
+    REGIONS.every((r) => monsterTable(r, r.depths[1]).some((m) => m.ranged)));
+  check('nothing ranged can roll on depth 1',
+    monsterTable(REGIONS[0], 1).every((m) => !m.ranged));
+
+  const g = new Game({ seed: 8081, memorial: new Memorial() });
+  const room = g.level.rooms[0];
+  g.level.entities.filter((e) => e.ai).forEach((e) => g.level.remove(e));
+  g.player.x = room.x + 1;
+  g.player.y = room.cy;
+  g.player.maxHp = 9999;
+  g.player.hp = 9999;
+
+  const archer = makeMonster({ ...MONSTERS.crossbowman }, room.x + 4, room.cy);
+  g.level.add(archer);
+  g.level.updateFov(g.player, g.theme.fovRadius);
+
+  const hpBefore = g.player.hp;
+  takeAiTurn(g, archer);
+  check('an archer shoots instead of closing',
+    g.player.hp < hpBefore && chebyshev(archer.x, archer.y, g.player.x, g.player.y) >= 3);
+  check('the log names the shot',
+    g.messages.some((m) => m.text.includes('shoots you')));
+
+  // It must hold its ground while reloading. An archer that retreats every
+  // reload turn is uncatchable at equal speed -- you close one tile, it opens
+  // one tile -- and that alone took the win rate to zero.
+  const spot = { x: archer.x, y: archer.y };
+  const hpHeld = g.player.hp;
+  takeAiTurn(g, archer);
+  check('it stands still to reload rather than kiting forever',
+    archer.x === spot.x && archer.y === spot.y && g.player.hp === hpHeld);
+
+  check('a shooter can always be closed with at equal speed', (() => {
+    // Walk a crusader at an archer across open floor and check the gap shuts.
+    const sim = new Game({ seed: 8085, memorial: new Memorial() });
+    sim.level.entities.filter((e) => e.ai).forEach((e) => sim.level.remove(e));
+    const r = sim.level.rooms[0];
+    sim.player.x = r.x + 1; sim.player.y = r.cy;
+    sim.player.maxHp = 9999; sim.player.hp = 9999;
+    const shooter = makeMonster({ ...MONSTERS.crossbowman }, r.x + r.w - 2, r.cy);
+    sim.level.add(shooter);
+    sim.level.updateFov(sim.player, sim.theme.fovRadius);
+
+    const start = chebyshev(sim.player.x, sim.player.y, shooter.x, shooter.y);
+    for (let i = 0; i < 40; i++) {
+      const dx = Math.sign(shooter.x - sim.player.x);
+      const dy = Math.sign(shooter.y - sim.player.y);
+      if (moveOrAttack(sim, sim.player, dx, dy)) sim.playerActed();
+      if (!shooter.alive) return true;
+    }
+    return chebyshev(sim.player.x, sim.player.y, shooter.x, shooter.y) < start;
+  })());
+
+  // Cornered, it fights badly with whatever it is holding.
+  const boxed = new Game({ seed: 8082, memorial: new Memorial() });
+  boxed.level.entities.filter((e) => e.ai).forEach((e) => boxed.level.remove(e));
+  const corner = boxed.level.rooms[0];
+  boxed.player.x = corner.x;
+  boxed.player.y = corner.y;
+  boxed.player.maxHp = 9999;
+  boxed.player.hp = 9999;
+  const cornered = makeMonster({ ...MONSTERS.crossbowman }, corner.x + 1, corner.y);
+  cornered.reloadLeft = 5;                    // no shot available
+  boxed.level.add(cornered);
+  boxed.level.updateFov(boxed.player, boxed.theme.fovRadius);
+  let moved = false;
+  const before = boxed.player.hp;
+  for (let i = 0; i < 6; i++) {
+    const was = { x: cornered.x, y: cornered.y };
+    takeAiTurn(boxed, cornered);
+    if (cornered.x !== was.x || cornered.y !== was.y) moved = true;
+  }
+  check('a cornered archer either retreats or swings',
+    moved || boxed.player.hp < before);
+
+  check('archers reload on their own turns, not the player\'s', (() => {
+    const a = makeMonster({ ...MONSTERS.boneSlinger }, 0, 0);
+    a.reloadLeft = 3;
+    const fast = makeMonster({ ...MONSTERS.boneSlinger, speed: 200 }, 0, 0);
+    fast.reloadLeft = 3;
+    return a.speed !== fast.speed && a.ranged.reload === fast.ranged.reload;
+  })());
+}
+
+// --- item briefs -----------------------------------------------------------
+section('item briefs');
+{
+  const all = Object.values(ITEMS);
+  check('every item has a category', all.every((i) => Boolean(itemCategory(i))));
+  check('every item has a backstory to show on hover',
+    all.every((i) => typeof i.lore === 'string' && i.lore.length > 40));
+  check('every item has a one-line flavour for pickup',
+    all.every((i) => typeof i.flavour === 'string' && i.flavour.length > 0));
+  check('categories are exactly the ones a player would name', (() => {
+    const found = [...new Set(all.map(itemCategory))].sort();
+    const expected = ['armour', 'ranged', 'relic', 'seal', 'shield', 'weapon'];
+    return found.length === expected.length && found.every((c, i) => c === expected[i]);
+  })());
+  check('ranged weapons read as ranged, not as swords',
+    itemCategory(ITEMS.arbalest) === 'ranged' && itemCategory(ITEMS.armingSword) === 'weapon');
+  check('seals and relics are told apart',
+    itemCategory(ITEMS.brassSeal) === 'seal' && itemCategory(ITEMS.psalmOfWard) === 'relic');
+
+  // The brief is derived from the data, so it can never contradict the game.
+  check('a brief states every effect the item actually has', all.every((i) => {
+    const effects = describeItem(i).effects.join(' ');
+    if (i.equip?.defense && !effects.includes('+' + i.equip.defense + ' defense')) return false;
+    if (i.equip?.ranged && !effects.includes(String(i.equip.ranged.range))) return false;
+    if (i.use?.amount && !effects.includes(String(i.use.amount))) return false;
+    return true;
+  }));
+  check('a brief mentions the speed a heavy piece costs',
+    describeItem(ITEMS.ossuaryPlate).effects.some((e) => e.includes('-25 speed')));
+  check('every brief carries its lore through',
+    all.every((i) => describeItem(i).lore.length > 0));
+}
+
+// --- naming ----------------------------------------------------------------
+section('naming');
+{
+  check('the Empty Tomb fields a grave wraith, not "a doubt"',
+    MONSTERS.graveWraith?.name === 'grave wraith' && MONSTERS.aDoubt === undefined);
+  check('no region still references the old key',
+    REGIONS.every((r) => !r.monsters.includes('aDoubt')));
+  check('every monster a region names actually exists',
+    REGIONS.every((r) => r.monsters.every((k) => Boolean(MONSTERS[k]))
+      && Boolean(MONSTERS[r.boss])));
+  check('no monster name starts with an article',
+    Object.values(MONSTERS).every((m) => !/^an? /.test(m.name)));
 }
 
 // --- long random playthroughs ----------------------------------------------

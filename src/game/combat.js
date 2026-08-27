@@ -1,4 +1,4 @@
-import { effectiveDefense, effectivePower } from './status.js';
+import { effectiveDefense, effectivePower, startReload } from './status.js';
 import { gainXp, xpValue } from './progress.js';
 
 // Defense mitigates a *proportion* of the blow rather than subtracting from it.
@@ -19,17 +19,24 @@ export function mitigate(rawDamage, defense) {
   return Math.max(MIN_DAMAGE, Math.round(rawDamage * kept));
 }
 
-export function attack(game, attacker, defender) {
+/**
+ * `options.power` overrides the attacker's melee power (a shot uses the
+ * weapon's ranged figure, not the arm behind it) and `options.verb` names what
+ * happened. Everything else -- mitigation, death, drops, experience -- is
+ * shared, so a shot can never drift out of step with a swing.
+ */
+export function attack(game, attacker, defender, options = {}) {
   if (defender.isPlayer) game.lastAttacker = article(attacker);
 
-  const power = effectivePower(attacker);
+  const power = options.power ?? effectivePower(attacker);
   const roll = game.rng.int(power - 1, power + 1);
   const dealt = mitigate(roll, effectiveDefense(defender));
   const absorbed = dealt <= MIN_DAMAGE && roll > MIN_DAMAGE;
 
   const subject = attacker.isPlayer ? 'You' : capitalize(article(attacker));
   const object = defender.isPlayer ? 'you' : article(defender);
-  const verb = attacker.isPlayer ? 'hit' : 'hits';
+  const stem = options.verb ?? 'hit';
+  const verb = attacker.isPlayer ? stem : stem + 's';
 
   game.log(
     absorbed
@@ -66,6 +73,12 @@ export function damage(game, target, amount, source = null) {
   target.name = 'the remains of ' + bareName(target);
 
   if (target.boss) game.onBossDefeated(target);
+}
+
+/** Loose a shot at something you can see. The caller has checked the range. */
+export function shoot(game, attacker, defender, profile) {
+  attack(game, attacker, defender, { power: profile.power, verb: 'shoot' });
+  startReload(attacker, profile);
 }
 
 /** Proper nouns (bosses, revenants) do not take an article. */

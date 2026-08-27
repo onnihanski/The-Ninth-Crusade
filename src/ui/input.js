@@ -32,6 +32,7 @@ export function keyToIntent(event) {
   if (key === ' ' || key === '.') return { type: 'wait' };
   if (key === 'g' || key === ',') return { type: 'pickup' };
   if (key === 'x') return { type: 'drop' };
+  if (key === 'f') return { type: 'fire' };
   if (raw === '>') return { type: 'descend' };
   if (key === 'r') return { type: 'restart' };
   return null;
@@ -41,6 +42,7 @@ export const HELP = [
   ['move', 'W A S D'],
   ['diagonals', 'Q E Z C'],
   ['wait', 'space'],
+  ['fire', 'f'],
   ['take', 'g'],
   ['use / wear', '1-9'],
   ['drop', 'x then 1-9'],

@@ -1,7 +1,9 @@
 import { attack } from './combat.js';
 import { applyEffect } from './effects.js';
 import { Tiles } from '../world/tiles.js';
-import { effectiveSpeed } from './status.js';
+import { effectiveSpeed, rangedProfile, canFire } from './status.js';
+import { shoot } from './combat.js';
+import { chebyshev } from '../engine/grid.js';
 
 export const MAX_PACK = 9;
 
@@ -39,6 +41,47 @@ export function moveOrAttack(game, actor, dx, dy) {
 
 export function wait() {
   return true;
+}
+
+/**
+ * Shoot the nearest thing you can see inside your weapon's range. Auto-target
+ * rather than a cursor: with one shot every few turns, choosing the target is
+ * rarely the interesting decision -- choosing when to give ground is.
+ */
+export function fire(game, actor) {
+  const profile = rangedProfile(actor);
+  if (!profile) {
+    game.log('You have nothing that shoots.', 'textDim');
+    return false;
+  }
+  if (!canFire(actor)) {
+    game.log('Still reloading.', 'textDim');
+    return false;
+  }
+
+  const target = nearestTargetInRange(game, actor, profile.range);
+  if (!target) {
+    game.log('Nothing in range.', 'textDim');
+    return false;
+  }
+
+  shoot(game, actor, target, profile);
+  return true;
+}
+
+function nearestTargetInRange(game, actor, range) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const entity of game.level.entities) {
+    if (!entity.ai || !entity.alive) continue;
+    if (!game.level.visible.get(entity.x, entity.y)) continue;
+    const distance = chebyshev(actor.x, actor.y, entity.x, entity.y);
+    if (distance <= range && distance < bestDistance) {
+      best = entity;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 export function pickUp(game, actor) {
