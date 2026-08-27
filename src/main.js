@@ -34,6 +34,10 @@ function handleIntent(intent) {
 globalThis.crusade = { get game() { return game; }, memorial, newGame };
 
 newGame();
+
+// The canvas measures the font at draw time, so a first paint before IBM Plex
+// Mono arrives would lay the glyph grid out in the fallback face.
+globalThis.document?.fonts?.ready.then(redraw);
     return;
   }
   if (game.state !== 'playing') return;

@@ -13,7 +13,7 @@ export const THEME = {
   name: 'The Ninth Crusade',
   tagline: 'descend, unseal, be remembered',
 
-  font: '16px "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
+  font: '16px "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace',
   cell: { w: 14, h: 20 },
   fovRadius: 8,
 

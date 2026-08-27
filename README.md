@@ -125,3 +125,11 @@ flavour text define what the game *is*, with no changes needed anywhere in
 - **Progression** — XP, equipment, and a reason to take the long way round
 - **Bosses with mechanics** — right now they are large monsters; they should
   each break one rule of the game
+
+## Playable build
+
+`node tools/build.mjs` writes two files:
+
+- `dist/index.html` — the whole game in one self-contained file; open it directly
+- `dist/embed.html` — the same, without the document wrapper, for hosts that
+  supply their own `<head>`

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <title>The Ninth Crusade</title>
 <style>
   :root {
@@ -11,7 +13,7 @@
     --line: #2a2731;
     --text: #cfc7b8;
     --dim: #75705f;
-    --mono: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+    --mono: "IBM Plex Mono", "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   body {
@@ -56,6 +58,7 @@
     overflow: hidden; margin-bottom: 4px;
   }
   #hp-fill { height: 100%; width: 100%; transition: width 120ms linear; }
+  @media (prefers-reduced-motion: reduce) { #hp-fill { transition: none; } }
   #hp-text, #stats { color: var(--dim); font-size: 11px; }
   ul { list-style: none; margin: 0; padding: 0; }
   #inventory li, #help li { padding: 2px 0; font-size: 11px; }

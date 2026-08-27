@@ -1,11 +1,5 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <title>The Ninth Crusade</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   :root {
     --bg: #0a0a0c;
@@ -85,8 +79,6 @@
   body.over #screen { filter: saturate(0.3) brightness(0.7); }
   @media (max-width: 900px) { main { flex-direction: column; align-items: center; } }
 </style>
-</head>
-<body>
 <main>
   <canvas id="screen"></canvas>
   <aside>
@@ -1823,5 +1815,3 @@ globalThis.crusade = { get game() { return game; }, memorial, newGame };
 
 newGame();
 </script>
-</body>
-</html>

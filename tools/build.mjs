@@ -57,3 +57,20 @@ if (html.includes('src="./src/main.js"')) {
 mkdirSync(resolve(root, 'dist'), { recursive: true });
 writeFileSync(resolve(root, 'dist/index.html'), html);
 console.log('dist/index.html  ' + (html.length / 1024).toFixed(1) + ' kB, ' + modules.size + ' modules inlined');
+
+// Body-only variant, for hosts that supply their own document skeleton.
+// Keeps the font <link> (valid in body) and drops the wrapper tags.
+const pick = (re, label) => {
+  const m = html.match(re);
+  if (!m) { console.error('build: could not find ' + label); process.exit(1); }
+  return m[1];
+};
+const fragment = [
+  '<title>' + pick(/<title>([\s\S]*?)<\/title>/, 'title') + '</title>',
+  html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]*>/)?.[0] ?? '',
+  '<style>' + pick(/<style>([\s\S]*?)<\/style>/, 'styles') + '</style>',
+  pick(/<body>([\s\S]*?)<\/body>/, 'body').trim(),
+].filter(Boolean).join('\n');
+
+writeFileSync(resolve(root, 'dist/embed.html'), fragment);
+console.log('dist/embed.html  ' + (fragment.length / 1024).toFixed(1) + ' kB, body-only variant');
