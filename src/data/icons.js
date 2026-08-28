@@ -169,6 +169,56 @@ export const ICONS = {
     p.line([[0.24, 0.56], [0.56, 0.56]], 0.08);
     p.line([[0.84, 0.14], [0.84, 0.9]], 0.08);                       // and the sword he stayed with
   },
+
+  // -- What is lying on the floor -------------------------------------------
+  //
+  // One icon per *kind* rather than per item: twenty-nine distinct shapes would
+  // be indistinguishable at this size, and the pack panel is where an item's
+  // real identity lives. These only have to answer "is that worth walking to".
+  itemPhial: (p) => {
+    p.rect(0.42, 0.16, 0.16, 0.16);                                  // neck
+    p.poly([[0.3, 0.34], [0.7, 0.34], [0.78, 0.82], [0.22, 0.82]]);  // and what is in it
+  },
+  itemSpark: (p) => {
+    p.poly([[0.5, 0.04], [0.6, 0.4], [0.96, 0.5], [0.6, 0.6], [0.5, 0.96],
+      [0.4, 0.6], [0.04, 0.5], [0.4, 0.4]]);
+  },
+  itemWard: (p) => {
+    p.rect(0.14, 0.34, 0.72, 0.32);                                  // a rolled psalm
+    p.ring(0.2, 0.5, 0.16, 0.08);
+    p.ring(0.8, 0.5, 0.16, 0.08);
+  },
+  itemStep: (p) => {
+    p.line([[0.2, 0.26], [0.56, 0.5], [0.2, 0.74]], 0.11);           // going, gone
+    p.line([[0.56, 0.26], [0.9, 0.5], [0.56, 0.74]], 0.11);
+  },
+  itemSword: (p) => {
+    p.line([[0.22, 0.84], [0.82, 0.2]], 0.11);                       // blade
+    p.line([[0.56, 0.2], [0.84, 0.48]], 0.09);                       // crossguard
+    p.dot(0.2, 0.86, 0.09);                                          // pommel
+  },
+  itemBow: (p) => {
+    p.line([[0.2, 0.16], [0.2, 0.84]], 0.1);                         // the limb
+    p.line([[0.14, 0.5], [0.9, 0.5]], 0.11);                         // the stock
+    p.dot(0.86, 0.5, 0.1);
+  },
+  itemShield: (p) => {
+    p.poly([[0.2, 0.14], [0.8, 0.14], [0.8, 0.54], [0.5, 0.9], [0.2, 0.54]]);
+  },
+  itemArmour: (p) => {
+    p.poly([[0.28, 0.2], [0.42, 0.2], [0.5, 0.32], [0.58, 0.2], [0.72, 0.2],
+      [0.84, 0.86], [0.16, 0.86]]);
+  },
+  itemSeal: (p) => {
+    p.ring(0.5, 0.5, 0.36, 0.13);
+    p.line([[0.5, 0.26], [0.5, 0.74]], 0.1);
+    p.line([[0.32, 0.5], [0.68, 0.5]], 0.1);
+  },
+  itemRelic: (p) => {
+    p.poly([[0.5, 0.02], [0.58, 0.38], [0.96, 0.5], [0.58, 0.62], [0.5, 0.98],
+      [0.42, 0.62], [0.04, 0.5], [0.42, 0.38]]);
+    p.ring(0.5, 0.5, 0.2, 0.07);                                     // whatever it is
+  },
 };
 
 export const ICON_KEYS = Object.keys(ICONS);

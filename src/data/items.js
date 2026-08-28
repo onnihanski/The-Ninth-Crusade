@@ -321,6 +321,28 @@ export const MERGE_LABEL = {
   power: 'power', defense: 'defense', speed: 'speed', regen: 'recovery',
 };
 
+const USE_ICONS = {
+  heal: 'itemPhial', smite: 'itemSpark', ward: 'itemWard', blink: 'itemStep',
+};
+const SLOT_ICONS = {
+  weapon: 'itemSword', shield: 'itemShield', armour: 'itemArmour',
+};
+
+/**
+ * Which icon this item is drawn with on the floor. One per kind, not per item:
+ * twenty-nine shapes would be indistinguishable at cell size, and the pack
+ * panel is where an item's real identity lives.
+ */
+export function itemIcon(spec) {
+  if (!spec) return null;
+  if (spec.victory) return 'itemRelic';
+  if (spec.seal) return 'itemSeal';
+  if (spec.use) return USE_ICONS[spec.use.kind] ?? 'itemPhial';
+  if (spec.equip?.ranged) return 'itemBow';
+  if (spec.equip) return SLOT_ICONS[spec.equip.slot] ?? null;
+  return null;
+}
+
 /** Short label shown beside the item's name in the pack. */
 export function itemCategory(spec) {
   if (spec.seal) return 'seal';

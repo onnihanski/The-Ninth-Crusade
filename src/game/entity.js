@@ -2,7 +2,7 @@
 // A thing is a monster because it has `ai`, an item because it has `item`, a
 // combatant because it has `maxHp`. Adding a new kind of thing means adding a
 // field, never editing a base class.
-import { ITEMS } from '../data/items.js';
+import { ITEMS, itemIcon } from '../data/items.js';
 
 let nextId = 1;
 
@@ -56,6 +56,7 @@ export function makeMonster(spec, x, y) {
     reloadLeft: 0,
     boss: spec.boss ?? false,
     bossTrait: spec.bossTrait ?? null,
+    iconScale: spec.boss ? 1.5 : 1,            // a boss overflows its own cell
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
   });
@@ -129,6 +130,8 @@ export function makeItem(spec, x, y) {
   return makeEntity({
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
+    iconKey: itemIcon(spec),
+    iconScale: 0.76,                           // loot sits smaller than a body
     item: {
       key: spec.key, use: spec.use, equip: spec.equip, trait: spec.trait ?? null,
       seal: spec.seal, victory: spec.victory, flavour: spec.flavour,

@@ -23,13 +23,15 @@ import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
 import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
-import { ICONS } from '../src/data/icons.js';
+import { ICONS, ICON_KEYS } from '../src/data/icons.js';
 import { generateLevel } from '../src/world/mapgen.js';
 import { RNG } from '../src/engine/rng.js';
 import { takeAiTurn } from '../src/game/ai.js';
 import { chebyshev } from '../src/engine/grid.js';
 import { REGIONS, MAX_DEPTH, isBossDepth } from '../src/data/regions.js';
-import { ITEMS, itemTable, SLOTS, itemCategory, describeItem, mergeBoon } from '../src/data/items.js';
+import {
+  ITEMS, itemTable, SLOTS, itemCategory, describeItem, mergeBoon, itemIcon,
+} from '../src/data/items.js';
 import { gainXp } from '../src/game/progress.js';
 import { MAX_PACK } from '../src/game/actions.js';
 
@@ -1717,11 +1719,20 @@ section('terrain drawing contract');
 section('creature icons');
 {
   const CREATURES = [...Object.keys(MONSTERS), 'player', 'revenant', 'corpse'];
+  const ITEM_ICONS = [...new Set(Object.values(ITEMS).map(itemIcon).filter(Boolean))];
+  const ALL = [...CREATURES, ...ITEM_ICONS];
 
   check('every creature has an icon',
     CREATURES.every((key) => typeof ICONS[key] === 'function'));
+  check('every item on the floor has an icon',
+    Object.values(ITEMS).every((spec) => typeof ICONS[itemIcon(spec)] === 'function'));
   check('no icon is defined for something that does not exist',
-    Object.keys(ICONS).every((key) => CREATURES.includes(key)));
+    ICON_KEYS.every((key) => ALL.includes(key)));
+  check('items are drawn by kind, not one shape each',
+    ITEM_ICONS.length < Object.keys(ITEMS).length / 2);
+  check('the things that end a run are told apart from ordinary loot',
+    itemIcon(ITEMS.theRelic) !== itemIcon(ITEMS.reliquaryPhial)
+    && itemIcon(ITEMS.brassSeal) !== itemIcon(ITEMS.reliquaryPhial));
 
   /** A painter that records instead of drawing, so icons can be run headless. */
   const recorder = () => {
@@ -1739,24 +1750,24 @@ section('creature icons');
     };
   };
 
-  const drawn = Object.fromEntries(CREATURES.map((key) => {
+  const drawn = Object.fromEntries(ALL.map((key) => {
     const p = recorder();
     ICONS[key](p);
     return [key, p.marks];
   }));
 
-  check('every icon draws something', CREATURES.every((k) => drawn[k].length > 0));
+  check('every icon draws something', ALL.every((k) => drawn[k].length > 0));
 
   // Sixteen pixels takes three or four marks before it turns to mud.
   check('no icon is more crowded than it can afford to be',
-    CREATURES.every((k) => drawn[k].length <= 6));
+    ALL.every((k) => drawn[k].length <= 6));
 
   // Unit-space discipline: an icon that strays outside 0..1 would spill into
   // the neighbouring cell at draw time, which is invisible in a screenshot
   // until two creatures stand side by side.
   const within = (v) => v >= -0.03 && v <= 1.03;
   const strays = [];
-  for (const key of CREATURES) {
+  for (const key of ALL) {
     for (const { name, args } of drawn[key]) {
       let ok = true;
       if (name === 'poly' || name === 'line') {

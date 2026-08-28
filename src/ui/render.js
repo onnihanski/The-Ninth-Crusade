@@ -52,17 +52,16 @@ export class Renderer {
    * screen instead of pushing the page into a scrollbar.
    */
   fit(availableWidth, availableHeight, cols, rows) {
-    const RATIO = 0.62;                        // a monospace cell is taller than wide
-    let cellH = Math.floor(availableHeight / rows);
-    let cellW = Math.round(cellH * RATIO);
+    // Square cells. They were taller than wide because a cell used to hold a
+    // monospace letter; nothing depends on a text grid any more, and square
+    // ground reads as tiles rather than as bricks stood on end.
+    const cell = Math.min(
+      Math.floor(availableWidth / cols),
+      Math.floor(availableHeight / rows),
+    );
 
-    if (cellW * cols > availableWidth) {
-      cellW = Math.floor(availableWidth / cols);
-      cellH = Math.round(cellW / RATIO);
-    }
-
-    this.cellW = Math.max(4, cellW);
-    this.cellH = Math.max(7, cellH);
+    this.cellW = Math.max(4, cell);
+    this.cellH = this.cellW;
     this.resize(cols, rows);
   }
 
@@ -224,10 +223,8 @@ export class Renderer {
     this.prepareText();
     this.painter ??= makePainter(this.ctx);
 
-    // Icons are drawn a little taller than wide, because the cell is, and
-    // because almost all of them are standing figures.
-    const iconW = this.cellW * 0.94;
-    const iconH = Math.min(this.cellH * 0.86, iconW * 1.35);
+    const baseW = this.cellW * 0.94;
+    const baseH = this.cellH * 0.94;
 
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
@@ -246,6 +243,13 @@ export class Renderer {
         this.putGlyph(e.x, e.y, e.glyph, tint);
         continue;
       }
+
+      // A boss draws past the edges of its own cell. It is the only thing that
+      // does, and it is the cheapest way to make one loom without giving it a
+      // second tile to stand on.
+      const scale = e.iconScale ?? 1;
+      const iconW = baseW * scale;
+      const iconH = baseH * scale;
 
       this.painter.place(
         e.x * this.cellW + (this.cellW - iconW) / 2,

@@ -1463,6 +1463,28 @@ const MERGE_LABEL = {
   power: 'power', defense: 'defense', speed: 'speed', regen: 'recovery',
 };
 
+const USE_ICONS = {
+  heal: 'itemPhial', smite: 'itemSpark', ward: 'itemWard', blink: 'itemStep',
+};
+const SLOT_ICONS = {
+  weapon: 'itemSword', shield: 'itemShield', armour: 'itemArmour',
+};
+
+/**
+ * Which icon this item is drawn with on the floor. One per kind, not per item:
+ * twenty-nine shapes would be indistinguishable at cell size, and the pack
+ * panel is where an item's real identity lives.
+ */
+function itemIcon(spec) {
+  if (!spec) return null;
+  if (spec.victory) return 'itemRelic';
+  if (spec.seal) return 'itemSeal';
+  if (spec.use) return USE_ICONS[spec.use.kind] ?? 'itemPhial';
+  if (spec.equip?.ranged) return 'itemBow';
+  if (spec.equip) return SLOT_ICONS[spec.equip.slot] ?? null;
+  return null;
+}
+
 /** Short label shown beside the item's name in the pack. */
 function itemCategory(spec) {
   if (spec.seal) return 'seal';
@@ -1594,6 +1616,7 @@ function makeMonster(spec, x, y) {
     reloadLeft: 0,
     boss: spec.boss ?? false,
     bossTrait: spec.bossTrait ?? null,
+    iconScale: spec.boss ? 1.5 : 1,            // a boss overflows its own cell
     drops: spec.drops ? [...spec.drops] : [],
     ai: { hunting: Boolean(spec.boss) },  // bosses are awake and waiting
   });
@@ -1667,6 +1690,8 @@ function makeItem(spec, x, y) {
   return makeEntity({
     x, y,
     glyph: spec.glyph, color: spec.color, name: spec.name,
+    iconKey: itemIcon(spec),
+    iconScale: 0.76,                           // loot sits smaller than a body
     item: {
       key: spec.key, use: spec.use, equip: spec.equip, trait: spec.trait ?? null,
       seal: spec.seal, victory: spec.victory, flavour: spec.flavour,
@@ -4017,6 +4042,56 @@ const ICONS = {
     p.line([[0.24, 0.56], [0.56, 0.56]], 0.08);
     p.line([[0.84, 0.14], [0.84, 0.9]], 0.08);                       // and the sword he stayed with
   },
+
+  // -- What is lying on the floor -------------------------------------------
+  //
+  // One icon per *kind* rather than per item: twenty-nine distinct shapes would
+  // be indistinguishable at this size, and the pack panel is where an item's
+  // real identity lives. These only have to answer "is that worth walking to".
+  itemPhial: (p) => {
+    p.rect(0.42, 0.16, 0.16, 0.16);                                  // neck
+    p.poly([[0.3, 0.34], [0.7, 0.34], [0.78, 0.82], [0.22, 0.82]]);  // and what is in it
+  },
+  itemSpark: (p) => {
+    p.poly([[0.5, 0.04], [0.6, 0.4], [0.96, 0.5], [0.6, 0.6], [0.5, 0.96],
+      [0.4, 0.6], [0.04, 0.5], [0.4, 0.4]]);
+  },
+  itemWard: (p) => {
+    p.rect(0.14, 0.34, 0.72, 0.32);                                  // a rolled psalm
+    p.ring(0.2, 0.5, 0.16, 0.08);
+    p.ring(0.8, 0.5, 0.16, 0.08);
+  },
+  itemStep: (p) => {
+    p.line([[0.2, 0.26], [0.56, 0.5], [0.2, 0.74]], 0.11);           // going, gone
+    p.line([[0.56, 0.26], [0.9, 0.5], [0.56, 0.74]], 0.11);
+  },
+  itemSword: (p) => {
+    p.line([[0.22, 0.84], [0.82, 0.2]], 0.11);                       // blade
+    p.line([[0.56, 0.2], [0.84, 0.48]], 0.09);                       // crossguard
+    p.dot(0.2, 0.86, 0.09);                                          // pommel
+  },
+  itemBow: (p) => {
+    p.line([[0.2, 0.16], [0.2, 0.84]], 0.1);                         // the limb
+    p.line([[0.14, 0.5], [0.9, 0.5]], 0.11);                         // the stock
+    p.dot(0.86, 0.5, 0.1);
+  },
+  itemShield: (p) => {
+    p.poly([[0.2, 0.14], [0.8, 0.14], [0.8, 0.54], [0.5, 0.9], [0.2, 0.54]]);
+  },
+  itemArmour: (p) => {
+    p.poly([[0.28, 0.2], [0.42, 0.2], [0.5, 0.32], [0.58, 0.2], [0.72, 0.2],
+      [0.84, 0.86], [0.16, 0.86]]);
+  },
+  itemSeal: (p) => {
+    p.ring(0.5, 0.5, 0.36, 0.13);
+    p.line([[0.5, 0.26], [0.5, 0.74]], 0.1);
+    p.line([[0.32, 0.5], [0.68, 0.5]], 0.1);
+  },
+  itemRelic: (p) => {
+    p.poly([[0.5, 0.02], [0.58, 0.38], [0.96, 0.5], [0.58, 0.62], [0.5, 0.98],
+      [0.42, 0.62], [0.04, 0.5], [0.42, 0.38]]);
+    p.ring(0.5, 0.5, 0.2, 0.07);                                     // whatever it is
+  },
 };
 
 const ICON_KEYS = Object.keys(ICONS);
@@ -4151,17 +4226,16 @@ class Renderer {
    * screen instead of pushing the page into a scrollbar.
    */
   fit(availableWidth, availableHeight, cols, rows) {
-    const RATIO = 0.62;                        // a monospace cell is taller than wide
-    let cellH = Math.floor(availableHeight / rows);
-    let cellW = Math.round(cellH * RATIO);
+    // Square cells. They were taller than wide because a cell used to hold a
+    // monospace letter; nothing depends on a text grid any more, and square
+    // ground reads as tiles rather than as bricks stood on end.
+    const cell = Math.min(
+      Math.floor(availableWidth / cols),
+      Math.floor(availableHeight / rows),
+    );
 
-    if (cellW * cols > availableWidth) {
-      cellW = Math.floor(availableWidth / cols);
-      cellH = Math.round(cellW / RATIO);
-    }
-
-    this.cellW = Math.max(4, cellW);
-    this.cellH = Math.max(7, cellH);
+    this.cellW = Math.max(4, cell);
+    this.cellH = this.cellW;
     this.resize(cols, rows);
   }
 
@@ -4323,10 +4397,8 @@ class Renderer {
     this.prepareText();
     this.painter ??= makePainter(this.ctx);
 
-    // Icons are drawn a little taller than wide, because the cell is, and
-    // because almost all of them are standing figures.
-    const iconW = this.cellW * 0.94;
-    const iconH = Math.min(this.cellH * 0.86, iconW * 1.35);
+    const baseW = this.cellW * 0.94;
+    const baseH = this.cellH * 0.94;
 
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
@@ -4345,6 +4417,13 @@ class Renderer {
         this.putGlyph(e.x, e.y, e.glyph, tint);
         continue;
       }
+
+      // A boss draws past the edges of its own cell. It is the only thing that
+      // does, and it is the cheapest way to make one loom without giving it a
+      // second tile to stand on.
+      const scale = e.iconScale ?? 1;
+      const iconW = baseW * scale;
+      const iconH = baseH * scale;
 
       this.painter.place(
         e.x * this.cellW + (this.cellW - iconW) / 2,
