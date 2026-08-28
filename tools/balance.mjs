@@ -35,6 +35,12 @@ const TURNS_PER_FLOOR = 1500;
 
 // `BALANCE_MAP=72x34` runs the sweep at a different floor shape, so a reshape
 // can be measured against the shape it replaced rather than argued about.
+// `BALANCE_SEED=1` runs a disjoint block of seeds. Seeds are derived from the
+// run index, so re-running the same sweep reproduces it exactly -- which is
+// what you want when reading a change, and useless when you need a second
+// independent sample to tell a real shift from a lucky seed set.
+const SEED_BLOCK = Number(process.env.BALANCE_SEED ?? 0);
+
 const mapSize = (() => {
   const raw = process.env.BALANCE_MAP;
   if (!raw) return {};
@@ -230,6 +236,10 @@ function playOne(seed, policy, memorial) {
     ending,
     depth: game.level.depth,
     level: game.player.level,
+    // Turns per floor is the hidden variable behind a lot of balance: it sets
+    // how many wanderers arrive and how much free regeneration a floor pays
+    // out. Map shape moves it without touching a single number in the data.
+    turnsPerFloor: floorTurns / Math.max(1, game.level.depth),
     won: game.state === 'won',
     speed: effectiveSpeed(game.player),
     kit: Object.values(game.player.equipment).filter(Boolean).map((i) => i.item.key),
@@ -246,7 +256,7 @@ function report(policy) {
   for (let i = 0; i < RUNS; i++) {
     // A fresh memorial per run: revenants would otherwise make later runs
     // harder in a way that muddies the reading.
-    results.push(playOne(i * 7919 + 13, policy, new Memorial(memoryStorage())));
+    results.push(playOne((i + SEED_BLOCK * RUNS) * 7919 + 13, policy, new Memorial(memoryStorage())));
   }
 
   const depths = results.map((r) => r.depth);
@@ -257,6 +267,8 @@ function report(policy) {
   console.log('  won            ' + wins + '/' + RUNS + '  (' + (100 * wins / RUNS).toFixed(1) + '%)');
   console.log('  depth  median ' + median(depths) + '   max ' + Math.max(...depths));
   console.log('  level  median ' + median(levels) + '   max ' + Math.max(...levels));
+  console.log('  turns per floor  median '
+    + median(results.map((r) => r.turnsPerFloor)).toFixed(0));
   const endings = new Map();
   for (const r of results) endings.set(r.ending, (endings.get(r.ending) ?? 0) + 1);
   console.log('  endings        ' + [...endings].map(([k, n]) => k + ' ' + n).join(', '));
