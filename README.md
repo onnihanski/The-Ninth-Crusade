@@ -206,6 +206,37 @@ came back as a wall on floor three, long before the crusader meeting them could
 field anything comparable. The kit drops with every point it ever had. It just
 does not lend them any.
 
+## Dev menu
+
+Press <kbd>`</kbd> or <kbd>F1</kbd>.
+
+Every system in this game sits several floors behind a random dungeon, which
+makes checking any one of them by playing to it impractical. The dev menu puts
+each of them one click away, and prints the derived numbers beside the base
+ones — most of this game's stats are computed from four or five sources at
+once, and the only honest way to check one is to see the parts next to the
+total:
+
+```
+POWER     8 base  →  14 effective   (merges +1)
+DEFENSE   3 base  →  12 effective   (sanctuary +0, merges +0)
+TRAITS    reach, riposte, sanctuary
+FLOOR     The Siege Yards   depth 3   [gate sealed]   [arena, door open]
+```
+
+| Section | For checking |
+|---|---|
+| Depth | Jump to any floor; the last of each region is its boss. Region shortcuts and a reroll button for looking at silhouettes |
+| Character | Levels, healing, invincible, glass cannon — for inspecting a fight at leisure or reaching a deep floor fast |
+| Gear | Give any item, two of one (mergeable), or a version taken off a dead predecessor. "All sacred gear" hands you every trait at once |
+| Spawn | Any monster or boss beside you, four at a time for cleave and piercing shots, or a revenant carrying gear it gains nothing from |
+| Story | Replay any gate chapter, any boss's lore, or the reveal |
+| Memorial | Record a predecessor on this floor, then reroll to meet them; clear it to test a fresh player's experience |
+| World | Reveal the map, unbar an arena door, stand at one, unseal a gate |
+
+It ships in the built game rather than being stripped out, which is deliberate:
+it is as useful for looking at a live bug as it is for looking at a feature.
+
 ## Balance
 
 Levelling and gear feed the same stats, so the numbers cannot be tuned by eye.

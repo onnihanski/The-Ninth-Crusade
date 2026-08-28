@@ -12,6 +12,7 @@ import { roman } from './data/names.js';
 import { Renderer } from './ui/render.js';
 import { Panel } from './ui/panel.js';
 import { keyToIntent } from './ui/input.js';
+import { DevMenu } from './ui/devmenu.js';
 
 // Bootstrap: owns the browser-facing bits and nothing else. All rules live in
 // game/, which is why the whole game is testable under node.
@@ -36,6 +37,14 @@ const panel = new Panel(document, THEME);
 
 // One memorial for the whole browser: it outlives every run, which is the point.
 const memorial = new Memorial(browserStorage());
+
+// Every system in this game sits several floors behind a random dungeon.
+// The dev menu puts each of them one click away. ` or F1.
+const dev = new DevMenu(document, {
+  getGame: () => game,
+  redraw: () => redraw(),
+  newGame: () => newGame(),
+});
 let game;
 let pendingDrop = false;   // `x` arms a drop; the next slot key resolves it
 let renaming = false;
@@ -158,6 +167,7 @@ function redraw() {
   panel.update(game);
   renderStory();
   renderPrompt();
+  dev.refresh();
   document.body.classList.toggle('over', game.state !== 'playing');
 }
 
@@ -202,6 +212,15 @@ function handleIntent(intent) {
 window.addEventListener('keydown', (event) => {
   if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+  if (event.key === '`' || event.key === 'F1') {
+    event.preventDefault();
+    dev.toggle();
+    return;
+  }
+  // While a control inside the dev menu has focus it owns the keyboard,
+  // otherwise picking an item from a list would also walk the crusader.
+  if (dev.isOpen && event.target?.closest?.('#dev')) return;
 
   // A question holds the floor until it is answered.
   if (game.prompt) {
