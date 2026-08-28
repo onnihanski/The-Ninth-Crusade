@@ -341,6 +341,20 @@ This is what makes the region silhouettes legible. In `#` and `.` the Choir's
 pillared halls and the Empty Tomb's caves look nearly identical; as solid mass
 they read as completely different places.
 
+**Creatures are drawn as icons**, not letters — 23 single-colour silhouettes
+for the twenty monsters, the crusader, the revenant and the corpse marker. They
+are vector shapes in unit space rather than sprites, which is what lets them be
+filled with whatever colour the renderer has already worked out and fade along
+the torch ramp; a fixed-colour bitmap would sit at full brightness while the
+floor around it went dark. There are only four monster colours, so silhouette
+carries identity: low four-legged things, upright figures told apart by what
+they hold, wide winged things, and bosses that are bigger and carry an emblem.
+The revenant is the player's own icon drawn hollow.
+
+Anything without an icon — items, and anything added later — keeps its glyph,
+so the map can never come up blank. `tools`-free: no atlas, no image files, and
+the single-file build stays self-contained.
+
 **Light falls off with distance.** Visibility used to be a switch — lit or
 remembered — which made the edge of sight a hard line and gave the torch no
 presence at all. A lit cell now sits somewhere on a ramp between the two shades
@@ -420,12 +434,14 @@ src/
     progress.js    experience, levels, regeneration
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
   ui/        browser layer -- the whole game fits one viewport, never scrolls
-    render.js      canvas renderer -- filled terrain, glyphs for objects
+    render.js      canvas renderer -- filled terrain, icons for creatures
+    painter.js     unit-space drawing surface the icons are described against
     input.js       key bindings
     panel.js       stats, seals, pack, message log
   data/      >>> the theme seam <<<
     theme.js       palette, flavour strings, tone
     lore.js        the first crusader's story, and each boss's history
+    icons.js       one silhouette per creature
     regions.js     the four regions and their bosses
     monsters.js    monster roster
     items.js       relics, arms, armour and seals
@@ -433,7 +449,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    296 assertions, including a full run to depth 12
+tests/smoke.mjs    303 assertions, including a full run to depth 12
 ```
 
 ### Tone

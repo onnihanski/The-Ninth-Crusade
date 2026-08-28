@@ -137,6 +137,7 @@ export function damage(game, target, amount, source = null) {
   target.ai = null;
   target.xp = 0;
   target.glyph = '%';
+  target.iconKey = 'corpse';
   target.color = 'corpse';
   target.name = 'the remains of ' + bareName(target);
 

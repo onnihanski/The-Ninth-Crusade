@@ -23,6 +23,7 @@ import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
 import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
+import { ICONS } from '../src/data/icons.js';
 import { generateLevel } from '../src/world/mapgen.js';
 import { RNG } from '../src/engine/rng.js';
 import { takeAiTurn } from '../src/game/ai.js';
@@ -1710,6 +1711,87 @@ section('terrain drawing contract');
     && Tiles.door.drawGlyph && Tiles.doorLocked.drawGlyph);
   check('exactly the walkable-but-notable tiles are lettered',
     Object.values(Tiles).filter((t) => t.drawGlyph).length === 4);
+}
+
+// --- creature icons --------------------------------------------------------
+section('creature icons');
+{
+  const CREATURES = [...Object.keys(MONSTERS), 'player', 'revenant', 'corpse'];
+
+  check('every creature has an icon',
+    CREATURES.every((key) => typeof ICONS[key] === 'function'));
+  check('no icon is defined for something that does not exist',
+    Object.keys(ICONS).every((key) => CREATURES.includes(key)));
+
+  /** A painter that records instead of drawing, so icons can be run headless. */
+  const recorder = () => {
+    const marks = [];
+    const record = (name) => (...args) => marks.push({ name, args });
+    return {
+      marks,
+      place: () => {},
+      poly: record('poly'),
+      line: record('line'),
+      rect: record('rect'),
+      dot: record('dot'),
+      ring: record('ring'),
+      arc: record('arc'),
+    };
+  };
+
+  const drawn = Object.fromEntries(CREATURES.map((key) => {
+    const p = recorder();
+    ICONS[key](p);
+    return [key, p.marks];
+  }));
+
+  check('every icon draws something', CREATURES.every((k) => drawn[k].length > 0));
+
+  // Sixteen pixels takes three or four marks before it turns to mud.
+  check('no icon is more crowded than it can afford to be',
+    CREATURES.every((k) => drawn[k].length <= 6));
+
+  // Unit-space discipline: an icon that strays outside 0..1 would spill into
+  // the neighbouring cell at draw time, which is invisible in a screenshot
+  // until two creatures stand side by side.
+  const within = (v) => v >= -0.03 && v <= 1.03;
+  const strays = [];
+  for (const key of CREATURES) {
+    for (const { name, args } of drawn[key]) {
+      let ok = true;
+      if (name === 'poly' || name === 'line') {
+        ok = args[0].every(([x, y]) => within(x) && within(y));
+      } else if (name === 'rect') {
+        const [x, y, w, h] = args;
+        ok = within(x) && within(y) && within(x + w) && within(y + h);
+      } else if (name === 'dot' || name === 'ring') {
+        const [cx, cy, r] = args;
+        ok = within(cx - r) && within(cx + r) && within(cy - r) && within(cy + r);
+      } else if (name === 'arc') {
+        ok = within(args[0]) && within(args[1]);
+      }
+      if (!ok) strays.push(key + '/' + name);
+    }
+  }
+  check('no icon draws outside its own cell' + (strays.length ? ' (' + strays.join(', ') + ')' : ''),
+    strays.length === 0);
+
+  // Identity has to come from shape: there are only four monster colours.
+  const signature = (marks) => marks.map((m) => m.name).join('+');
+  const bySignature = new Map();
+  for (const key of Object.keys(MONSTERS)) {
+    const sig = signature(drawn[key]);
+    if (!bySignature.has(sig)) bySignature.set(sig, []);
+    bySignature.get(sig).push(key);
+  }
+  const biggestClash = Math.max(...[...bySignature.values()].map((g) => g.length));
+  check('monster silhouettes are built from varied shapes (largest identical group: '
+    + biggestClash + ')', biggestClash <= 4);
+
+  check('the revenant is drawn hollow, as the player is not', (() => {
+    const hollow = (marks) => marks.every((m) => m.name === 'ring' || m.name === 'line');
+    return hollow(drawn.revenant) && !hollow(drawn.player);
+  })());
 }
 
 // --- long random playthroughs ----------------------------------------------

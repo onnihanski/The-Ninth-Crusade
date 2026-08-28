@@ -25,7 +25,7 @@ export function makeEntity(props = {}) {
 export function makePlayer(x, y, name) {
   const player = makeEntity({
     x, y,
-    glyph: '@', color: 'player', name: name ?? 'you',
+    glyph: '@', color: 'player', name: name ?? 'you', iconKey: 'player',
     blocks: true, speed: 100,
     maxHp: 26, hp: 26, power: 5, defense: 1,
     level: 1, xp: 0,
@@ -47,7 +47,7 @@ export function makePlayer(x, y, name) {
 export function makeMonster(spec, x, y) {
   return makeEntity({
     x, y,
-    glyph: spec.glyph, color: spec.color, name: spec.name,
+    glyph: spec.glyph, color: spec.color, name: spec.name, iconKey: spec.key,
     blocks: true, speed: spec.speed,
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
@@ -103,7 +103,7 @@ export function makeRevenant(entry, x, y) {
 
   return makeEntity({
     x, y,
-    glyph: '@', color: 'revenant',
+    glyph: '@', color: 'revenant', iconKey: 'revenant',
     name: 'the revenant of ' + entry.name,
     blocks: true,
     speed: 100,

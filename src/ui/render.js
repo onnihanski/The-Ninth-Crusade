@@ -15,6 +15,9 @@
 // else.
 // ---------------------------------------------------------------------------
 
+import { ICONS } from '../data/icons.js';
+import { makePainter } from './painter.js';
+
 /** Faces of a wall cell, and which side of the cell each one draws on. */
 const FACES = [
   { dx: 0, dy: -1, side: 'top' },
@@ -219,14 +222,37 @@ export class Renderer {
    */
   drawEntities(level, colors) {
     this.prepareText();
+    this.painter ??= makePainter(this.ctx);
+
+    // Icons are drawn a little taller than wide, because the cell is, and
+    // because almost all of them are standing figures.
+    const iconW = this.cellW * 0.94;
+    const iconH = Math.min(this.cellH * 0.86, iconW * 1.35);
+
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
       if (!level.visible.get(e.x, e.y)) continue;
+
       // Something at the far edge of the torch is harder to make out, which is
       // most of what makes a lit radius feel like light rather than a mask.
       const base = colors[e.color] ?? colors.text;
       const rung = this.lightAt(e.x, e.y) / LIGHT_STEPS;
-      this.putGlyph(e.x, e.y, e.glyph, mix(base, mix(base, colors.bg, 0.55), rung));
+      const tint = mix(base, mix(base, colors.bg, 0.55), rung);
+
+      // Anything without an icon -- items, and anything added later -- keeps
+      // its glyph, so the map can never come up blank.
+      const icon = ICONS[e.iconKey];
+      if (!icon) {
+        this.putGlyph(e.x, e.y, e.glyph, tint);
+        continue;
+      }
+
+      this.painter.place(
+        e.x * this.cellW + (this.cellW - iconW) / 2,
+        e.y * this.cellH + (this.cellH - iconH) / 2,
+        iconW, iconH, tint,
+      );
+      icon(this.painter);
     }
   }
 
