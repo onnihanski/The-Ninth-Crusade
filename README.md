@@ -341,9 +341,19 @@ This is what makes the region silhouettes legible. In `#` and `.` the Choir's
 pillared halls and the Empty Tomb's caves look nearly identical; as solid mass
 they read as completely different places.
 
-Both shades fall out of the two colours a region already defines. A new region
+**Light falls off with distance.** Visibility used to be a switch — lit or
+remembered — which made the edge of sight a hard line and gave the torch no
+presence at all. A lit cell now sits somewhere on a ramp between the two shades
+according to how far it is from you, so the two states became one continuum: a
+tile at the edge of the torch arrives at exactly the colour it will keep once
+you walk away from it. Monsters and items fade the same way, which is most of
+what makes a lit radius feel like light rather than a mask.
+
+All of it falls out of the two colours a region already defines. A new region
 needs no new palette: `wall` becomes the mass, its rim and its lit face, and
-`floor` becomes the wash.
+`floor` becomes the wash — and each of those becomes a ramp, built once per
+draw rather than blended per cell, since a floor is well over two thousand of
+them.
 
 ## Four regions, four shapes
 

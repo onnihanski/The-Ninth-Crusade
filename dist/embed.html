@@ -3864,6 +3864,15 @@ const FACES = [
 
 const REMEMBERED = 0.62;      // how far unlit ground fades toward the background
 
+// Light falloff. Visibility used to be a switch -- lit or remembered -- which
+// made the edge of sight a hard line and gave the torch no presence at all.
+// A lit cell now sits somewhere on a ramp between the two shades according to
+// its distance from the crusader, so the two states became one continuum and
+// no new colours were needed to do it.
+const LIGHT_STEPS = 12;       // rungs on the ramp; enough to avoid banding
+const EDGE_FADE = 0.82;       // how far the last ring of sight falls toward dark
+const FALLOFF = 1.5;          // >1 keeps the near ring bright and drops off late
+
 class Renderer {
   constructor(canvas, theme) {
     this.canvas = canvas;
@@ -3915,15 +3924,31 @@ class Renderer {
     // Rock reads as lit mass and floor as the dark you walk on, so the two
     // are pushed apart rather than sitting at the same value. The region's
     // `floor` colour is the lighter of its two, so it takes the heavier fade.
+    const wallLit = mix(colors.wall, bg, 0.26);
+    const wallDim = mix(colors.wall, bg, 0.74);
+    const rimLit = mix(colors.wall, '#ffffff', 0.18);
+    const rimDim = mix(colors.wall, bg, 0.62);
+    const faceLit = mix(colors.wall, '#ffffff', 0.35);  // the side a light from above falls on
+    const floorLit = mix(colors.floor, bg, 0.60);
+    const floorDim = mix(colors.floor, bg, 0.90);
+
+    // Each ramp runs from the lit shade to the remembered one, so a cell at
+    // the edge of the torch arrives at exactly the colour it will keep once
+    // the crusader walks away from it.
     return {
-      wallLit: mix(colors.wall, bg, 0.38),
-      wallDim: mix(colors.wall, bg, 0.60),
-      rimLit: mix(colors.wall, '#ffffff', 0.18),
-      rimDim: mix(colors.wall, bg, 0.50),
-      faceLit: mix(colors.wall, '#ffffff', 0.35),   // the side a light from above falls on
-      floorLit: mix(colors.floor, bg, 0.76),
-      floorDim: mix(colors.floor, bg, 0.84),
+      wall: ramp(wallLit, wallDim),
+      floor: ramp(floorLit, floorDim),
+      rim: ramp(rimLit, rimDim),
+      face: ramp(faceLit, rimDim),
+      wallDim, floorDim, rimDim,
     };
+  }
+
+  /** Which rung of the light ramp a cell sits on. 0 is at the crusader's feet. */
+  lightAt(x, y) {
+    const distance = Math.hypot(x - this.eye.x, y - this.eye.y);
+    const t = Math.min(1, distance / this.radius);
+    return Math.min(LIGHT_STEPS, Math.round((t ** FALLOFF) * EDGE_FADE * LIGHT_STEPS));
   }
 
   draw(game) {
@@ -3931,6 +3956,9 @@ class Renderer {
     const level = game.level;
     const colors = game.palette();
     const shade = this.shades(colors);
+
+    this.eye = { x: game.player.x, y: game.player.y };
+    this.radius = Math.max(1, game.theme.fovRadius);
 
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -3949,12 +3977,15 @@ class Renderer {
         if (!visible && !level.explored.get(x, y)) continue;
 
         const tile = level.tiles.get(x, y);
+        const rung = visible ? this.lightAt(x, y) : -1;
+
         if (tile.walkable) {
           // A touch of grain, fixed per tile, so a floor is not a flat slab.
-          const grain = (hash(x, y) - 0.5) * 0.022;
-          this.fillCell(x, y, shiftLightness(visible ? shade.floorLit : shade.floorDim, grain));
+          const grain = (hash(x, y) - 0.5) * 0.016;
+          const base = visible ? shade.floor[rung] : shade.floorDim;
+          this.fillCell(x, y, shiftLightness(base, grain));
         } else {
-          this.fillCell(x, y, visible ? shade.wallLit : shade.wallDim);
+          this.fillCell(x, y, visible ? shade.wall[rung] : shade.wallDim);
         }
       }
     }
@@ -3985,10 +4016,12 @@ class Renderer {
 
           // The south face is the one a light from above would fall on, so it
           // gets the brightest treatment and the block gains a little depth.
-          const lit = visible || level.visible.get(nx, ny);
-          ctx.fillStyle = side === 'bottom'
-            ? (lit ? shade.faceLit : shade.rimDim)
-            : (lit ? shade.rimLit : shade.rimDim);
+          // A face is lit by whichever of its two cells the torch reaches.
+          const neighbourVisible = level.visible.get(nx, ny);
+          const rung = visible ? this.lightAt(x, y)
+            : neighbourVisible ? this.lightAt(nx, ny) : -1;
+          ctx.fillStyle = rung < 0 ? shade.rimDim
+            : (side === 'bottom' ? shade.face[rung] : shade.rim[rung]);
 
           const px = x * this.cellW;
           const py = y * this.cellH;
@@ -4012,7 +4045,9 @@ class Renderer {
         const tile = level.tiles.get(x, y);
         if (!tile.drawGlyph) continue;
         const base = colors[tile.key] ?? colors.text;
-        this.putGlyph(x, y, tile.glyph, visible ? base : mix(base, colors.bg, REMEMBERED));
+        const faded = mix(base, colors.bg, REMEMBERED);
+        this.putGlyph(x, y, tile.glyph,
+          visible ? mix(base, faded, this.lightAt(x, y) / LIGHT_STEPS) : faded);
       }
     }
   }
@@ -4026,7 +4061,11 @@ class Renderer {
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
       if (!level.visible.get(e.x, e.y)) continue;
-      this.putGlyph(e.x, e.y, e.glyph, colors[e.color] ?? colors.text);
+      // Something at the far edge of the torch is harder to make out, which is
+      // most of what makes a lit radius feel like light rather than a mask.
+      const base = colors[e.color] ?? colors.text;
+      const rung = this.lightAt(e.x, e.y) / LIGHT_STEPS;
+      this.putGlyph(e.x, e.y, e.glyph, mix(base, mix(base, colors.bg, 0.55), rung));
     }
   }
 
@@ -4054,6 +4093,16 @@ function layer(entity) {
   if (entity.ai && entity.alive) return 2;
   if (entity.item) return 1;
   return 0;
+}
+
+/**
+ * A precomputed run of shades from lit to remembered. Built once per draw
+ * rather than blended per cell: a full floor is well over two thousand cells,
+ * and each blend parses two colour strings.
+ */
+function ramp(from, to) {
+  return Array.from({ length: LIGHT_STEPS + 1 },
+    (_, i) => mix(from, to, i / LIGHT_STEPS));
 }
 
 /** Stable per-tile noise, so floor grain never shimmers between frames. */
