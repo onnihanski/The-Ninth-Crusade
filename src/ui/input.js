@@ -51,5 +51,6 @@ export const HELP = [
   ['merge', 'm'],
   ['descend', '>'],
   ['name', 'n'],
+  ['dev menu', '0'],
   ['restart', 'r'],
 ];

@@ -20,7 +20,7 @@ import { heirloomBonus } from '../data/traits.js';
 // each of them one click away, and prints the derived numbers beside the base
 // ones so a formula can be read rather than inferred.
 //
-// Opened with ` or F1. Deliberately not discoverable by accident, and equally
+// Opened with 0 or F1. Deliberately not discoverable by accident, and equally
 // deliberately always available -- it is as useful for looking at a live bug as
 // it is for looking at a feature.
 // ---------------------------------------------------------------------------

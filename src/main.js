@@ -39,7 +39,8 @@ const panel = new Panel(document, THEME);
 const memorial = new Memorial(browserStorage());
 
 // Every system in this game sits several floors behind a random dungeon.
-// The dev menu puts each of them one click away. ` or F1.
+// The dev menu puts each of them one click away. 0 or F1. The digit row is
+// otherwise pack slots, and those only run 1-9, so 0 was going spare.
 const dev = new DevMenu(document, {
   getGame: () => game,
   redraw: () => redraw(),
@@ -213,7 +214,7 @@ window.addEventListener('keydown', (event) => {
   if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
 
-  if (event.key === '`' || event.key === 'F1') {
+  if (event.key === '0' || event.key === 'F1') {
     event.preventDefault();
     dev.toggle();
     return;

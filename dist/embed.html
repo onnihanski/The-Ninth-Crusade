@@ -323,7 +323,7 @@
 <div id="dev" hidden aria-label="Developer menu">
   <header>
     <h2>Dev menu</h2>
-    <span class="dev-hint">every system, one click away &middot; <kbd>`</kbd> or <kbd>F1</kbd> to close</span>
+    <span class="dev-hint">every system, one click away &middot; <kbd>0</kbd> or <kbd>F1</kbd> to close</span>
     <button id="dev-close" type="button">close</button>
   </header>
   <div id="dev-readout"></div>
@@ -3985,6 +3985,7 @@ const HELP = [
   ['merge', 'm'],
   ['descend', '>'],
   ['name', 'n'],
+  ['dev menu', '0'],
   ['restart', 'r'],
 ];
 
@@ -4221,7 +4222,7 @@ function escapeHtml(s) {
 // each of them one click away, and prints the derived numbers beside the base
 // ones so a formula can be read rather than inferred.
 //
-// Opened with ` or F1. Deliberately not discoverable by accident, and equally
+// Opened with 0 or F1. Deliberately not discoverable by accident, and equally
 // deliberately always available -- it is as useful for looking at a live bug as
 // it is for looking at a feature.
 // ---------------------------------------------------------------------------
@@ -4650,7 +4651,8 @@ const panel = new Panel(document, THEME);
 const memorial = new Memorial(browserStorage());
 
 // Every system in this game sits several floors behind a random dungeon.
-// The dev menu puts each of them one click away. ` or F1.
+// The dev menu puts each of them one click away. 0 or F1. The digit row is
+// otherwise pack slots, and those only run 1-9, so 0 was going spare.
 const dev = new DevMenu(document, {
   getGame: () => game,
   redraw: () => redraw(),
@@ -4824,7 +4826,7 @@ window.addEventListener('keydown', (event) => {
   if (renaming) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
 
-  if (event.key === '`' || event.key === 'F1') {
+  if (event.key === '0' || event.key === 'F1') {
     event.preventDefault();
     dev.toggle();
     return;

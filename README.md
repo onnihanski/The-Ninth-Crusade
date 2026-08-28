@@ -62,6 +62,7 @@ node tests/smoke.mjs
 | Drop        | `x` then `1`–`9`               |
 | Descend     | `>` while standing on `>`     |
 | Restart     | `r`                           |
+| Dev menu    | `0`                           |
 
 Diagonals are not optional garnish. Monsters move and attack on all eight
 directions, so a player limited to four would be flanked with no way to answer.
@@ -208,7 +209,7 @@ does not lend them any.
 
 ## Dev menu
 
-Press <kbd>`</kbd> or <kbd>F1</kbd>.
+Press <kbd>0</kbd> or <kbd>F1</kbd>.
 
 Every system in this game sits several floors behind a random dungeon, which
 makes checking any one of them by playing to it impractical. The dev menu puts
