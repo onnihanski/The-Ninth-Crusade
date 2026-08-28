@@ -604,16 +604,27 @@ function castLight(ox, oy, radius, row, startSlope, endSlope, xx, xy, yx, yy, is
 
 // ==== src/world/tiles.js ===================
 const Tiles = {
+  // `glyph` is still the identity of a tile -- the dev menu, the tests and any
+  // future tileset all key off it. `drawGlyph` only says whether the renderer
+  // letters it: walls and floors are drawn as filled ground instead.
   wall: { key: 'wall', glyph: '#', walkable: false, transparent: false },
   floor: { key: 'floor', glyph: '.', walkable: true, transparent: true },
-  stairsDown: { key: 'stairsDown', glyph: '>', walkable: true, transparent: true },
+  stairsDown: {
+    key: 'stairsDown', glyph: '>', walkable: true, transparent: true, drawGlyph: true,
+  },
   // Stands where the stairs will be, on every boss floor, until a seal turns it.
-  sealedGate: { key: 'sealedGate', glyph: '=', walkable: true, transparent: true },
+  sealedGate: {
+    key: 'sealedGate', glyph: '=', walkable: true, transparent: true, drawGlyph: true,
+  },
 
   // The only way into a boss arena. Opaque on purpose: whatever is waiting in
   // there should not be visible from the corridor.
-  door: { key: 'door', glyph: '+', walkable: true, transparent: false },
-  doorLocked: { key: 'doorLocked', glyph: '+', walkable: false, transparent: false },
+  door: {
+    key: 'door', glyph: '+', walkable: true, transparent: false, drawGlyph: true,
+  },
+  doorLocked: {
+    key: 'doorLocked', glyph: '+', walkable: false, transparent: false, drawGlyph: true,
+  },
 };
 
 // ==== src/world/mapgen.js ==================
@@ -3834,11 +3845,33 @@ function descend(game) {
 }
 
 // ==== src/ui/render.js =====================
-// Canvas glyph renderer. Draws a terminal, essentially: one monospace character
-// per cell, three visibility states -- lit, remembered, unknown.
+// ---------------------------------------------------------------------------
+// Canvas renderer.
 //
-// Swapping this for a tileset later means changing only this file: everything
-// else talks in glyphs and colour keys, never pixels.
+// Terrain is drawn as ground rather than lettering: walls are filled mass with
+// a lit rim on every face that meets open floor, and floors are a tinted wash.
+// Only things that are *objects* -- stairs, gates, doors, monsters, items, the
+// crusader -- are still drawn as glyphs.
+//
+// This is what makes the four region silhouettes legible. In '#' and '.' the
+// Choir's pillared halls and the Empty Tomb's caves look nearly identical; as
+// solid mass they read as completely different places.
+//
+// Everything outside this file still talks in glyphs and colour keys, never
+// pixels, so a tileset would replace `putGlyph` and the fills and touch nothing
+// else.
+// ---------------------------------------------------------------------------
+
+/** Faces of a wall cell, and which side of the cell each one draws on. */
+const FACES = [
+  { dx: 0, dy: -1, side: 'top' },
+  { dx: 1, dy: 0, side: 'right' },
+  { dx: 0, dy: 1, side: 'bottom' },
+  { dx: -1, dy: 0, side: 'left' },
+];
+
+const REMEMBERED = 0.62;      // how far unlit ground fades toward the background
+
 class Renderer {
   constructor(canvas, theme) {
     this.canvas = canvas;
@@ -3879,38 +3912,143 @@ class Renderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  /**
+   * The shades this floor is drawn in, derived from the region's own two
+   * colours. Regions keep defining just `wall` and `floor`; the mass, the rim
+   * and the wash all fall out of those, so a new region needs no new palette.
+   */
+  shades(colors) {
+    const bg = colors.bg;
+
+    // Rock reads as lit mass and floor as the dark you walk on, so the two
+    // are pushed apart rather than sitting at the same value. The region's
+    // `floor` colour is the lighter of its two, so it takes the heavier fade.
+    return {
+      wallLit: mix(colors.wall, bg, 0.38),
+      wallDim: mix(colors.wall, bg, 0.60),
+      rimLit: mix(colors.wall, '#ffffff', 0.18),
+      rimDim: mix(colors.wall, bg, 0.50),
+      faceLit: mix(colors.wall, '#ffffff', 0.35),   // the side a light from above falls on
+      floorLit: mix(colors.floor, bg, 0.76),
+      floorDim: mix(colors.floor, bg, 0.84),
+    };
+  }
+
   draw(game) {
-    const { ctx, theme } = this;
+    const { ctx } = this;
     const level = game.level;
-    const colors = game.palette();  // region tint applied
+    const colors = game.palette();
+    const shade = this.shades(colors);
 
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.font = Math.round(this.cellH * 0.78) + 'px '
-      + (theme.fontFamily ?? 'monospace');
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
 
-    // Terrain, in two passes of brightness.
+    this.drawGround(level, shade);
+    this.drawWallFaces(level, shade);
+    this.drawTileGlyphs(level, colors);
+    this.drawEntities(level, colors);
+  }
+
+  /** Pass one: every known cell is filled, as mass or as floor. */
+  drawGround(level, shade) {
     for (let y = 0; y < level.height; y++) {
       for (let x = 0; x < level.width; x++) {
         const visible = level.visible.get(x, y);
-        const explored = level.explored.get(x, y);
-        if (!visible && !explored) continue;
+        if (!visible && !level.explored.get(x, y)) continue;
 
         const tile = level.tiles.get(x, y);
-        const base = colors[tile.key] ?? colors.text;
-        this.putGlyph(x, y, tile.glyph, visible ? base : dim(base, colors.bg, 0.62));
+        if (tile.walkable) {
+          // A touch of grain, fixed per tile, so a floor is not a flat slab.
+          const grain = (hash(x, y) - 0.5) * 0.022;
+          this.fillCell(x, y, shiftLightness(visible ? shade.floorLit : shade.floorDim, grain));
+        } else {
+          this.fillCell(x, y, visible ? shade.wallLit : shade.wallDim);
+        }
       }
     }
+  }
 
-    // Entities, but only where the player can actually see. Corpses and items
-    // draw under anything standing on them.
+  /**
+   * Pass two: a lit rim on every wall face that meets open ground. This is the
+   * whole trick -- an unbroken block of colour reads as nothing, and the same
+   * block with its edges picked out reads as architecture.
+   */
+  drawWallFaces(level, shade) {
+    const { ctx } = this;
+    const thickness = Math.max(1, Math.round(this.cellH * 0.09));
+
+    for (let y = 0; y < level.height; y++) {
+      for (let x = 0; x < level.width; x++) {
+        const visible = level.visible.get(x, y);
+        if (!visible && !level.explored.get(x, y)) continue;
+        if (level.tiles.get(x, y).walkable) continue;
+
+        for (const { dx, dy, side } of FACES) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!level.tiles.inBounds(nx, ny)) continue;
+
+          const neighbourKnown = level.visible.get(nx, ny) || level.explored.get(nx, ny);
+          if (!neighbourKnown || !level.tiles.get(nx, ny).walkable) continue;
+
+          // The south face is the one a light from above would fall on, so it
+          // gets the brightest treatment and the block gains a little depth.
+          const lit = visible || level.visible.get(nx, ny);
+          ctx.fillStyle = side === 'bottom'
+            ? (lit ? shade.faceLit : shade.rimDim)
+            : (lit ? shade.rimLit : shade.rimDim);
+
+          const px = x * this.cellW;
+          const py = y * this.cellH;
+          if (side === 'top') ctx.fillRect(px, py, this.cellW, thickness);
+          if (side === 'bottom') ctx.fillRect(px, py + this.cellH - thickness, this.cellW, thickness);
+          if (side === 'left') ctx.fillRect(px, py, thickness, this.cellH);
+          if (side === 'right') ctx.fillRect(px + this.cellW - thickness, py, thickness, this.cellH);
+        }
+      }
+    }
+  }
+
+  /** Pass three: terrain that is an object rather than ground keeps its glyph. */
+  drawTileGlyphs(level, colors) {
+    this.prepareText();
+    for (let y = 0; y < level.height; y++) {
+      for (let x = 0; x < level.width; x++) {
+        const visible = level.visible.get(x, y);
+        if (!visible && !level.explored.get(x, y)) continue;
+
+        const tile = level.tiles.get(x, y);
+        if (!tile.drawGlyph) continue;
+        const base = colors[tile.key] ?? colors.text;
+        this.putGlyph(x, y, tile.glyph, visible ? base : mix(base, colors.bg, REMEMBERED));
+      }
+    }
+  }
+
+  /**
+   * Pass four: entities, only where the player can actually see. Corpses and
+   * items draw under anything standing on them.
+   */
+  drawEntities(level, colors) {
+    this.prepareText();
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
       if (!level.visible.get(e.x, e.y)) continue;
       this.putGlyph(e.x, e.y, e.glyph, colors[e.color] ?? colors.text);
     }
+  }
+
+  prepareText() {
+    const { ctx } = this;
+    ctx.font = Math.round(this.cellH * 0.78) + 'px '
+      + (this.theme.fontFamily ?? 'monospace');
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+  }
+
+  fillCell(x, y, color) {
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(x * this.cellW, y * this.cellH, this.cellW, this.cellH);
   }
 
   putGlyph(x, y, glyph, color) {
@@ -3926,17 +4064,42 @@ function layer(entity) {
   return 0;
 }
 
-/** Blend `hex` toward `toward` by `amount` -- how remembered tiles are dimmed. */
-function dim(hex, toward, amount) {
+/** Stable per-tile noise, so floor grain never shimmers between frames. */
+function hash(x, y) {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Blend `hex` toward `toward` by `amount`. */
+function mix(hex, toward, amount) {
   const a = parseHex(hex);
   const b = parseHex(toward);
-  const mix = a.map((channel, i) => Math.round(channel + (b[i] - channel) * amount));
-  return 'rgb(' + mix.join(',') + ')';
+  return 'rgb(' + a.map((channel, i) =>
+    Math.round(channel + (b[i] - channel) * amount)).join(',') + ')';
+}
+
+function shiftLightness(color, amount) {
+  const [r, g, b] = parseColor(color);
+  const shift = Math.round(255 * amount);
+  return 'rgb(' + [r, g, b]
+    .map((channel) => Math.max(0, Math.min(255, channel + shift)))
+    .join(',') + ')';
+}
+
+function parseColor(color) {
+  return color.startsWith('#') ? parseHex(color) : parseRgb(color);
 }
 
 function parseHex(hex) {
+  if (!hex.startsWith('#')) return parseRgb(hex);
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function parseRgb(value) {
+  const parts = value.match(/-?\d+/g);
+  return parts ? parts.slice(0, 3).map(Number) : [0, 0, 0];
 }
 
 // ==== src/ui/input.js ======================

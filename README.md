@@ -329,6 +329,22 @@ is about to happen and you still have to solve it.
 | 7–9 | The Choir | Odo the Precentor | Reaches you wherever he can be heard — range is not a thing that happens to a voice. |
 | 10–12 | The Empty Tomb | **Sir Baudouin IX the Unreturned** | Fights the way you fight. He has had practice. |
 
+## How it looks
+
+Terrain is drawn as ground rather than lettering. Walls are filled mass with a
+lit rim on every face that meets open floor — brightest on the south face, where
+a light from above would fall — and floors are a tinted wash with a little fixed
+grain so they are not flat slabs. Only things that are *objects* keep a glyph:
+stairs, gates, doors, monsters, items, the crusader.
+
+This is what makes the region silhouettes legible. In `#` and `.` the Choir's
+pillared halls and the Empty Tomb's caves look nearly identical; as solid mass
+they read as completely different places.
+
+Both shades fall out of the two colours a region already defines. A new region
+needs no new palette: `wall` becomes the mass, its rim and its lit face, and
+`floor` becomes the wash.
+
 ## Four regions, four shapes
 
 Each region generates its own silhouette, not just its own palette:
@@ -394,7 +410,7 @@ src/
     progress.js    experience, levels, regeneration
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
   ui/        browser layer -- the whole game fits one viewport, never scrolls
-    render.js      canvas glyph renderer
+    render.js      canvas renderer -- filled terrain, glyphs for objects
     input.js       key bindings
     panel.js       stats, seals, pack, message log
   data/      >>> the theme seam <<<
@@ -407,7 +423,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    292 assertions, including a full run to depth 12
+tests/smoke.mjs    296 assertions, including a full run to depth 12
 ```
 
 ### Tone

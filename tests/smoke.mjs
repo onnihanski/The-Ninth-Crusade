@@ -1695,6 +1695,23 @@ section('boss arenas');
   })());
 }
 
+// --- what the renderer draws ------------------------------------------------
+section('terrain drawing contract');
+{
+  // The renderer draws ground as filled mass and only letters things that are
+  // objects. `glyph` stays the identity of every tile regardless -- the dev
+  // menu, these tests, and any future tileset all key off it.
+  check('every tile still has a glyph',
+    Object.values(Tiles).every((t) => typeof t.glyph === 'string' && t.glyph.length === 1));
+  check('ground is drawn as mass, not lettering',
+    !Tiles.wall.drawGlyph && !Tiles.floor.drawGlyph);
+  check('things you can use keep their glyph',
+    Tiles.stairsDown.drawGlyph && Tiles.sealedGate.drawGlyph
+    && Tiles.door.drawGlyph && Tiles.doorLocked.drawGlyph);
+  check('exactly the walkable-but-notable tiles are lettered',
+    Object.values(Tiles).filter((t) => t.drawGlyph).length === 4);
+}
+
 // --- long random playthroughs ----------------------------------------------
 section('random playthroughs');
 {
