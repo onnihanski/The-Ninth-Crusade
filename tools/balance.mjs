@@ -33,6 +33,16 @@ if (disabled.size) {
 const RUNS = Number(process.argv[2] ?? 300);
 const TURNS_PER_FLOOR = 1500;
 
+// `BALANCE_MAP=72x34` runs the sweep at a different floor shape, so a reshape
+// can be measured against the shape it replaced rather than argued about.
+const mapSize = (() => {
+  const raw = process.env.BALANCE_MAP;
+  if (!raw) return {};
+  const [width, height] = raw.split('x').map(Number);
+  console.log('map: ' + width + 'x' + height);
+  return { width, height };
+})();
+
 /** Rough combat value: damage per turn, plus survivability. */
 function score(player, equipment) {
   const worn = Object.values(equipment).filter(Boolean);
@@ -153,7 +163,7 @@ function restIfSafe(game, monsters) {
 }
 
 function playOne(seed, policy, memorial) {
-  const game = new Game({ seed, memorial });
+  const game = new Game({ seed, memorial, ...mapSize });
   let floorTurns = 0;
   let ending = 'turnlimit';
 

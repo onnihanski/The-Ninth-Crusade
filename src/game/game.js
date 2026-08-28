@@ -20,6 +20,14 @@ import { THEME } from '../data/theme.js';
 const ACT_COST = 100;
 const MAX_LOG = 200;
 
+// The shape of a floor. Cells are square, so the map's aspect is the view's
+// aspect: a wide map on a browser-shaped stage is letterboxed, and the cell
+// size gets capped by whichever axis runs out first. 56x42 is 2352 tiles
+// against the old 72x34's 2448 -- the same amount of dungeon -- but it fits a
+// stage closely enough to buy back roughly a third more pixels per tile.
+export const MAP_WIDTH = 56;
+export const MAP_HEIGHT = 42;
+
 // Something else comes down the corridor every so often. Without wanderers,
 // regeneration makes health free: clear a floor, rest to full, repeat. This is
 // what puts a price on standing still, and it is why resting is a decision
@@ -30,7 +38,7 @@ const WANDER_MIN_DISTANCE = 12;
 // The Game owns all mutable state and knows nothing about the DOM, which is
 // what lets tests/smoke.mjs drive full crusades headlessly under node.
 export class Game {
-  constructor({ seed, width = 72, height = 34, theme = THEME, memorial } = {}) {
+  constructor({ seed, width = MAP_WIDTH, height = MAP_HEIGHT, theme = THEME, memorial } = {}) {
     this.theme = theme;
     this.width = width;
     this.height = height;
