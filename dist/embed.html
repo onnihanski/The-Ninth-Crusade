@@ -1703,7 +1703,10 @@ function makePlayer(x, y, name) {
 function makeMonster(spec, x, y) {
   return makeEntity({
     x, y,
-    glyph: spec.glyph, color: spec.color, name: spec.name, iconKey: spec.key,
+    glyph: spec.glyph, color: spec.color, name: spec.name,
+    // `key` is what it is; `iconKey` is how it is drawn right now. They start
+    // the same and part company when something changes shape mid-fight.
+    key: spec.key, iconKey: spec.key,
     blocks: true, speed: spec.speed,
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,
@@ -2169,6 +2172,417 @@ function monsterTable(region, depth) {
     .filter((m) => depth >= (m.minDepth ?? 1));
 }
 
+// ==== src/data/icons.js ===========================================
+// ---------------------------------------------------------------------------
+// Creature icons.
+//
+// Drawn as single-colour silhouettes in unit space, filled with whatever colour
+// the renderer has already worked out for that entity. That is the whole reason
+// they are shapes rather than sprites: a fixed-colour bitmap could not fade
+// along the torch ramp or take a region's tint, and would sit at full
+// brightness while the floor around it went dark.
+//
+// There are only four monster colours, so *silhouette* has to carry identity.
+// The set is built around that: low four-legged things, upright figures told
+// apart by what they hold, wide winged things, and bosses that are simply
+// bigger and carry an emblem. At sixteen pixels a shape gets three or four
+// marks before it turns to mud, so none of these use more.
+// ---------------------------------------------------------------------------
+
+const head = (p, cx = 0.42, cy = 0.21, r = 0.125) => p.dot(cx, cy, r);
+
+/** The standard upright body: shoulders down to a hem. */
+const robe = (p, cx = 0.42, top = 0.35) => p.poly([
+  [cx - 0.16, top], [cx + 0.16, top], [cx + 0.21, 0.96], [cx - 0.21, 0.96],
+]);
+
+/** A heavier, broader body, for things that are hard to move. */
+const bulk = (p, cx = 0.46, top = 0.34) => p.poly([
+  [cx - 0.26, top], [cx + 0.26, top], [cx + 0.3, 0.96], [cx - 0.3, 0.96],
+]);
+
+const ICONS = {
+  // -- the crusader and what becomes of them ---------------------------------
+  player: (p) => {
+    head(p);
+    robe(p);
+    p.line([[0.5, 0.52], [0.78, 0.52]], 0.07);        // arm to the blade
+    p.line([[0.82, 0.16], [0.82, 0.78]], 0.09);       // sword, held upright
+    p.line([[0.7, 0.34], [0.94, 0.34]], 0.07);        // crossguard
+  },
+  // The same figure with nothing inside it. Meeting yourself should read as
+  // recognition before it reads as a monster.
+  revenant: (p) => {
+    p.ring(0.42, 0.21, 0.125, 0.07);
+    p.line([[0.26, 0.35], [0.21, 0.96]], 0.07);
+    p.line([[0.58, 0.35], [0.63, 0.96]], 0.07);
+    p.line([[0.26, 0.35], [0.58, 0.35]], 0.07);
+    p.line([[0.82, 0.2], [0.82, 0.78]], 0.07);
+  },
+  corpse: (p) => {
+    p.poly([[0.1, 0.78], [0.34, 0.62], [0.68, 0.62], [0.9, 0.78], [0.9, 0.88], [0.1, 0.88]]);
+  },
+
+  // -- The Siege Yards -------------------------------------------------------
+  campDog: (p) => {
+    p.poly([[0.16, 0.5], [0.7, 0.5], [0.7, 0.74], [0.16, 0.74]]);   // low body
+    p.poly([[0.66, 0.36], [0.94, 0.36], [0.94, 0.58], [0.66, 0.58]]); // head, thrust forward
+    p.line([[0.24, 0.74], [0.24, 0.96]], 0.09);
+    p.line([[0.62, 0.74], [0.62, 0.96]], 0.09);
+    p.line([[0.16, 0.5], [0.04, 0.3]], 0.08);                        // tail
+  },
+  deserter: (p) => {
+    p.poly([[0.3, 0.3], [0.42, 0.1], [0.54, 0.3]]);                  // hood
+    robe(p);
+    p.rect(0.6, 0.42, 0.2, 0.26);                                    // the pack he took
+  },
+  flagellant: (p) => {
+    head(p);
+    robe(p);
+    p.arc(0.6, 0.28, 0.3, Math.PI * 1.1, Math.PI * 1.9, 0.07);       // the scourge, mid-swing
+  },
+  crossbowman: (p) => {
+    head(p);
+    robe(p);
+    p.line([[0.14, 0.5], [0.86, 0.5]], 0.1);                         // the stave, held level
+    p.line([[0.5, 0.4], [0.5, 0.66]], 0.07);
+  },
+  herald: (p) => {
+    p.poly([[0.26, 0.3], [0.4, 0.12], [0.54, 0.3]]);                 // helm
+    bulk(p, 0.4);                                                    // very good armour
+    p.line([[0.82, 0.06], [0.82, 0.96]], 0.07);                      // the pole
+    p.poly([[0.82, 0.1], [0.99, 0.2], [0.82, 0.34]]);                // and the roll on it
+  },
+
+  // -- The Reliquary ---------------------------------------------------------
+  bonepicker: (p) => {
+    p.dot(0.36, 0.28, 0.12);
+    p.line([[0.44, 0.28], [0.78, 0.36]], 0.07);                      // the beak
+    p.poly([[0.22, 0.4], [0.5, 0.4], [0.58, 0.96], [0.16, 0.96]]);   // hunched
+  },
+  reliquaryMoth: (p) => {
+    p.poly([[0.5, 0.5], [0.06, 0.26], [0.1, 0.7]]);                  // wings, wide and low
+    p.poly([[0.5, 0.5], [0.94, 0.26], [0.9, 0.7]]);
+    p.dot(0.5, 0.52, 0.11);
+    p.line([[0.46, 0.36], [0.36, 0.18]], 0.05);                      // antennae
+    p.line([[0.54, 0.36], [0.64, 0.18]], 0.05);
+  },
+  ossuaryWarden: (p) => {
+    p.rect(0.3, 0.1, 0.36, 0.2);                                     // flat helm
+    bulk(p, 0.48, 0.32);
+    p.line([[0.2, 0.5], [0.76, 0.5]], 0.08);                         // the bar across it
+  },
+  boneSlinger: (p) => {
+    head(p, 0.38);
+    robe(p, 0.38);
+    p.arc(0.72, 0.42, 0.24, Math.PI * 0.6, Math.PI * 1.7, 0.06);     // the sling, wound up
+    p.dot(0.9, 0.3, 0.08);                                           // and what is in it
+  },
+  saintPerpetua: (p) => {
+    p.ring(0.44, 0.18, 0.2, 0.055);                                  // halo
+    p.dot(0.44, 0.24, 0.12);
+    p.poly([[0.2, 0.38], [0.68, 0.38], [0.8, 0.96], [0.08, 0.96]]);  // shroud, still on her
+  },
+  // What gets up. The halo is broken, the shroud has come off one shoulder, and
+  // she is standing a good deal straighter than a saint who has just been
+  // killed ought to. You are meant to be able to see, across the room and
+  // without reading the log, that this is not the fight you just won.
+  saintPerpetuaRisen: (p) => {
+    p.arc(0.44, 0.18, 0.2, Math.PI * 0.15, Math.PI * 1.5, 0.055);    // halo, cracked open
+    p.dot(0.44, 0.24, 0.12);
+    p.poly([[0.24, 0.38], [0.72, 0.44], [0.84, 0.96], [0.06, 0.96]]); // shroud, slipped
+    p.line([[0.72, 0.5], [0.94, 0.32]], 0.07);                       // and an arm out of it
+  },
+
+  // -- The Choir -------------------------------------------------------------
+  chorister: (p) => {
+    p.poly([[0.3, 0.3], [0.44, 0.1], [0.58, 0.3]]);                  // cowl
+    robe(p, 0.44);
+    // The book has to reach past the shoulders or the robe swallows it.
+    p.rect(0.1, 0.54, 0.68, 0.15);
+    p.line([[0.44, 0.5], [0.44, 0.73]], 0.05);                       // its spine
+  },
+  censerbearer: (p) => {
+    head(p, 0.38);
+    robe(p, 0.38);
+    p.line([[0.56, 0.36], [0.84, 0.52]], 0.05);                      // the chain
+    p.dot(0.86, 0.62, 0.13);                                         // the censer, swinging
+  },
+  wingedThing: (p) => {
+    p.poly([[0.5, 0.18], [0.02, 0.06], [0.24, 0.5]]);                // wings, up and angular
+    p.poly([[0.5, 0.18], [0.98, 0.06], [0.76, 0.5]]);
+    p.poly([[0.38, 0.24], [0.62, 0.24], [0.56, 0.94], [0.44, 0.94]]);
+  },
+  psalmist: (p) => {
+    head(p, 0.34);
+    robe(p, 0.34);
+    p.arc(0.42, 0.3, 0.26, Math.PI * 1.75, Math.PI * 0.25, 0.055);   // a held note, carrying
+    p.arc(0.42, 0.3, 0.42, Math.PI * 1.8, Math.PI * 0.2, 0.05);
+  },
+  odoThePrecentor: (p) => {
+    p.dot(0.36, 0.2, 0.13);
+    p.poly([[0.14, 0.34], [0.58, 0.34], [0.66, 0.96], [0.06, 0.96]]);
+    p.line([[0.58, 0.4], [0.72, 0.18]], 0.07);                       // the hand that leads it
+    p.arc(0.5, 0.3, 0.44, Math.PI * 1.7, Math.PI * 0.3, 0.055);
+    p.arc(0.5, 0.3, 0.62, Math.PI * 1.75, Math.PI * 0.25, 0.05);
+  },
+
+  // -- The Empty Tomb --------------------------------------------------------
+  graveWraith: (p) => {
+    p.poly([                                                         // no feet, a torn hem
+      [0.5, 0.06], [0.78, 0.3], [0.82, 0.8],
+      [0.66, 0.68], [0.5, 0.9], [0.34, 0.68], [0.18, 0.8], [0.22, 0.3],
+    ]);
+  },
+  pilgrimHusk: (p) => {
+    p.ring(0.4, 0.22, 0.13, 0.06);                                   // hollow, where a face was
+    robe(p, 0.4);
+    p.line([[0.78, 0.14], [0.78, 0.96]], 0.06);                      // the staff, still walking
+  },
+  sepulchreWorm: (p) => {
+    p.line([[0.08, 0.86], [0.3, 0.62], [0.56, 0.84], [0.8, 0.56], [0.86, 0.34]], 0.16);
+    p.dot(0.86, 0.28, 0.12);                                         // the end that bites
+  },
+  mourner: (p) => {
+    p.dot(0.44, 0.15, 0.11);                                         // bowed head
+    p.poly([[0.44, 0.24], [0.86, 0.96], [0.02, 0.96]]);              // veiled to the floor
+  },
+  baudouin: (p) => {
+    p.poly([[0.26, 0.3], [0.4, 0.1], [0.54, 0.3]]);                  // a crusader's helm
+    bulk(p, 0.4);
+    p.line([[0.4, 0.42], [0.4, 0.84]], 0.08);                        // the cross he came under
+    p.line([[0.24, 0.56], [0.56, 0.56]], 0.08);
+    p.line([[0.84, 0.14], [0.84, 0.9]], 0.08);                       // and the sword he stayed with
+  },
+
+  // -- What is lying on the floor -------------------------------------------
+  //
+  // One icon per *kind* rather than per item: twenty-nine distinct shapes would
+  // be indistinguishable at this size, and the pack panel is where an item's
+  // real identity lives. These only have to answer "is that worth walking to".
+  itemPhial: (p) => {
+    p.rect(0.42, 0.16, 0.16, 0.16);                                  // neck
+    p.poly([[0.3, 0.34], [0.7, 0.34], [0.78, 0.82], [0.22, 0.82]]);  // and what is in it
+  },
+  itemSpark: (p) => {
+    p.poly([[0.5, 0.04], [0.6, 0.4], [0.96, 0.5], [0.6, 0.6], [0.5, 0.96],
+      [0.4, 0.6], [0.04, 0.5], [0.4, 0.4]]);
+  },
+  itemWard: (p) => {
+    p.rect(0.14, 0.34, 0.72, 0.32);                                  // a rolled psalm
+    p.ring(0.2, 0.5, 0.16, 0.08);
+    p.ring(0.8, 0.5, 0.16, 0.08);
+  },
+  itemStep: (p) => {
+    p.line([[0.2, 0.26], [0.56, 0.5], [0.2, 0.74]], 0.11);           // going, gone
+    p.line([[0.56, 0.26], [0.9, 0.5], [0.56, 0.74]], 0.11);
+  },
+  itemSword: (p) => {
+    p.line([[0.22, 0.84], [0.82, 0.2]], 0.11);                       // blade
+    p.line([[0.56, 0.2], [0.84, 0.48]], 0.09);                       // crossguard
+    p.dot(0.2, 0.86, 0.09);                                          // pommel
+  },
+  itemBow: (p) => {
+    p.line([[0.2, 0.16], [0.2, 0.84]], 0.1);                         // the limb
+    p.line([[0.14, 0.5], [0.9, 0.5]], 0.11);                         // the stock
+    p.dot(0.86, 0.5, 0.1);
+  },
+  itemShield: (p) => {
+    p.poly([[0.2, 0.14], [0.8, 0.14], [0.8, 0.54], [0.5, 0.9], [0.2, 0.54]]);
+  },
+  itemArmour: (p) => {
+    p.poly([[0.28, 0.2], [0.42, 0.2], [0.5, 0.32], [0.58, 0.2], [0.72, 0.2],
+      [0.84, 0.86], [0.16, 0.86]]);
+  },
+  itemSeal: (p) => {
+    p.ring(0.5, 0.5, 0.36, 0.13);
+    p.line([[0.5, 0.26], [0.5, 0.74]], 0.1);
+    p.line([[0.32, 0.5], [0.68, 0.5]], 0.1);
+  },
+  itemRelic: (p) => {
+    p.poly([[0.5, 0.02], [0.58, 0.38], [0.96, 0.5], [0.58, 0.62], [0.5, 0.98],
+      [0.42, 0.62], [0.04, 0.5], [0.42, 0.38]]);
+    p.ring(0.5, 0.5, 0.2, 0.07);                                     // whatever it is
+  },
+};
+
+const ICON_KEYS = Object.keys(ICONS);
+
+// ---------------------------------------------------------------------------
+// Terrain that is an object rather than ground.
+//
+// Doors, barred doors and sealed gates were the last things on the map still
+// drawn as punctuation, which made the three tiles a crusader actually has to
+// make a decision about look like syntax in the middle of a drawn room. Same
+// unit space, same single colour, same rule about how many marks a shape can
+// afford: these are read at a glance or not at all.
+//
+// The three of them are deliberately a family, and a single colour gives you
+// exactly one lever to tell them apart with: hollow against solid. A door is an
+// arch you can see the room through; the barred door is that arch with beams
+// across it; the gate is a grating, and looks like nothing else on the map.
+// ---------------------------------------------------------------------------
+
+// A pointed arch, traced from one foot up over the crown and down to the other.
+// Left open at the floor, because that is the part you walk through.
+const ARCH = [[0.25, 0.96], [0.25, 0.46], [0.5, 0.17], [0.75, 0.46], [0.75, 0.96]];
+
+const TILE_ICONS = {
+  // Hollow: you can see the room through it, and you can walk through it.
+  door: (p) => p.line(ARCH, 0.1),
+
+  // The same arch, barred. Two beams rather than one: a single beam across a
+  // pointed arch is the letter A, which is precisely the thing this game took
+  // off the map in the first place. Two is a barred door and reads as nothing
+  // else.
+  doorLocked: (p) => {
+    p.line(ARCH, 0.1);
+    p.rect(0.2, 0.52, 0.6, 0.11);
+    p.rect(0.2, 0.74, 0.6, 0.11);
+  },
+
+  // Not an arch at all. A portcullis is a grating, and a grating is the one
+  // shape that survives being sixteen pixels wide: two rails, three bars, and
+  // the seal set where they cross.
+  sealedGate: (p) => {
+    p.line([[0.12, 0.28], [0.88, 0.28]], 0.09);
+    p.line([[0.12, 0.74], [0.88, 0.74]], 0.09);
+    p.line([[0.3, 0.12], [0.3, 0.9]], 0.08);
+    p.line([[0.5, 0.12], [0.5, 0.9]], 0.08);
+    p.line([[0.7, 0.12], [0.7, 0.9]], 0.08);
+    p.dot(0.5, 0.51, 0.14);
+  },
+};
+
+const TILE_ICON_KEYS = Object.keys(TILE_ICONS);
+
+// ==== src/data/lore.js ============================================
+// ---------------------------------------------------------------------------
+// THE STORY OF THE FIRST CRUSADER
+//
+// Told in three chapters, one at each sealed gate, and finished at the bottom.
+//
+// The chapters are deliberately incomplete rather than misleading: everything
+// they say about Sir Baudouin is true, and none of it is the point. The reveal
+// works because the crusade's own records are admiring, and because a reader
+// who is paying attention can feel the shape of what is missing without being
+// told. Nothing before `reveal` may hint at what he became.
+// ---------------------------------------------------------------------------
+const FIRST_CRUSADER = 'Sir Baudouin IX the Unreturned';
+
+const GATE_CHAPTERS = {
+  // Keyed by region, shown the first time that region's gate comes into view.
+  siegeYards: {
+    title: 'The First Descent',
+    lines: [
+      'Sir Baudouin IX went down before the crusade had a number, a banner, or a '
+      + 'reason it could write down. He took a sword, a lamp, and orders that no '
+      + 'longer exist.',
+      'The gate below this one was standing open when he reached it. Nobody has '
+      + 'found it open since.',
+    ],
+  },
+  reliquary: {
+    title: 'What He Sent Up',
+    lines: [
+      'For eleven weeks he sent things up. A map. A list of the dead, in a good '
+      + 'hand. A request for more lamp oil. One line about the singing, which the '
+      + 'Reliquary filed under acoustics.',
+      'Then the notes stopped, and the crusade sent a second man down to find out '
+      + 'why. That was the second crusade. This is the ninth.',
+    ],
+  },
+  choir: {
+    title: 'The Last Note',
+    lines: [
+      'The last thing Sir Baudouin sent up was not written. A chorister carried '
+      + 'it, and delivered it exactly, and would not say it twice:',
+      '"Do not send the others. I am close."',
+      'The crusade read this as encouragement, and sent six more.',
+    ],
+  },
+};
+
+/**
+ * Told the moment a boss declines its own death. Only Saint Perpetua has one,
+ * because only Saint Perpetua does it -- and the card exists because the thing
+ * she does was invisible: two lines of log during a fight nobody is reading the
+ * log through, and then a health bar that quietly refilled.
+ */
+const BOSS_RISE = {
+  saintPerpetua: {
+    title: 'She Declines',
+    lines: [
+      'She goes down the way the catalogue says she went down the first time: '
+      + 'without argument, and without any particular interest in staying there.',
+      'Then she gets up, brushes off the same shoulder, and looks at you as '
+      + 'though you have both been kept waiting.',
+    ],
+    mechanic: 'That was the first half. She rises with less armour and less left.',
+  },
+};
+
+/** Shown when you finally meet him. This is the only place the truth is told. */
+const REVEAL = {
+  title: 'The Ninth Crusader',
+  lines: [
+    'He is still here. Still close. He has been down here longer than the church '
+    + 'above him has stood, and he did not spend that time looking for the Relic.',
+    'He spent it waiting for the second man, and the third, and the eighth. Every '
+    + 'crusade the first one caused. He knows your name — he has known it since '
+    + 'the Siege Yards, because he is the one who wrote it on the roll.',
+    'He is not going to explain. He has been rehearsing this for nine crusades '
+    + 'and he is only going to get one attempt at it.',
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// BOSS LORE
+//
+// One panel each, the first time you lay eyes on them. Every entry states, in
+// fiction, exactly what the thing is about to do to you -- the mechanic is
+// never a surprise, only the fight is.
+// ---------------------------------------------------------------------------
+const BOSS_LORE = {
+  herald: {
+    title: 'the Herald of the Third Wall',
+    lines: [
+      'The Third Wall fell forty years ago and took the register with it. He has '
+      + 'kept the roll from memory ever since: every name that went down, and the '
+      + 'considerably shorter list of names that came back up.',
+      'He reads them aloud when he wants company. They are still down here, and '
+      + 'they still answer to their names.',
+    ],
+    mechanic: 'He calls the roll. Names answer.',
+  },
+  saintPerpetua: {
+    title: 'Saint Perpetua the Patient',
+    lines: [
+      'Martyred once, catalogued twice, and interred in a box that has been opened '
+      + 'more often than it has been closed. Her patience was not a virtue the '
+      + 'Reliquary awarded her. It was an observation.',
+      'She has never once been in a hurry to stay dead.',
+    ],
+    mechanic: 'Killing her is the first half of it.',
+  },
+  odoThePrecentor: {
+    title: 'Odo the Precentor',
+    lines: [
+      'He led the singing here when there was still a service to lead, and he has '
+      + 'not stood down. The Choir follows him because he has never paused long '
+      + 'enough to let them stop.',
+      'Distance is not something that happens to a voice in a room built to carry '
+      + 'one.',
+    ],
+    mechanic: 'He reaches you wherever he can be heard.',
+  },
+  baudouin: {
+    title: FIRST_CRUSADER,
+    lines: REVEAL.lines,
+    mechanic: 'He fights the way you fight. He has had practice.',
+  },
+};
+
 // ==== src/game/bosses.js ==========================================
 // Each boss does exactly what its lore panel says it does. The panel is written
 // from the mechanic rather than the other way round, so a player who reads it
@@ -2254,6 +2668,14 @@ function takeBossTurn(game, boss) {
 /**
  * Death, intercepted. Saint Perpetua declines it once. Returns true if she is
  * still standing, in which case the caller must not finish her.
+ *
+ * Getting up is the only thing this boss does, and for a long time it did not
+ * land: two lines of log, in the middle of a fight nobody reads the log
+ * through, and a health bar that quietly went back up. A player could finish
+ * the floor without ever understanding what had happened to them. It now does
+ * what the rest of this game's turns of story do -- stops everything and says
+ * so -- and she changes shape, so the room carries the news for the rest of the
+ * fight rather than the message log carrying it for one turn.
  */
 function bossRises(game, boss) {
   if (boss.bossTrait !== 'risesAgain' || boss.hasRisen) return false;
@@ -2261,8 +2683,19 @@ function bossRises(game, boss) {
   boss.hasRisen = true;
   boss.hp = Math.max(1, Math.round(boss.maxHp * RISEN_SHARE));
   boss.defense = Math.max(0, boss.defense - 1);
-  game.log('Saint Perpetua gets up again, without complaint.', 'mythic');
+
+  // Second half, and she looks like it from across the room.
+  if (ICONS[boss.iconKey + 'Risen']) boss.iconKey += 'Risen';
+
+  game.log(boss.name + ' gets up again, without complaint.', 'mythic');
   game.log('This was the first half of it.', 'textDim');
+
+  const card = BOSS_RISE[boss.key];
+  if (card) {
+    game.tellStory({
+      kind: 'boss', title: card.title, lines: card.lines, mechanic: card.mechanic,
+    });
+  }
   return true;
 }
 
@@ -2859,114 +3292,6 @@ function ordinal(n) {
   return ORDINALS[n - 1] ?? String(n) + 'th';
 }
 
-// ==== src/data/lore.js ============================================
-// ---------------------------------------------------------------------------
-// THE STORY OF THE FIRST CRUSADER
-//
-// Told in three chapters, one at each sealed gate, and finished at the bottom.
-//
-// The chapters are deliberately incomplete rather than misleading: everything
-// they say about Sir Baudouin is true, and none of it is the point. The reveal
-// works because the crusade's own records are admiring, and because a reader
-// who is paying attention can feel the shape of what is missing without being
-// told. Nothing before `reveal` may hint at what he became.
-// ---------------------------------------------------------------------------
-const FIRST_CRUSADER = 'Sir Baudouin IX the Unreturned';
-
-const GATE_CHAPTERS = {
-  // Keyed by region, shown the first time that region's gate comes into view.
-  siegeYards: {
-    title: 'The First Descent',
-    lines: [
-      'Sir Baudouin IX went down before the crusade had a number, a banner, or a '
-      + 'reason it could write down. He took a sword, a lamp, and orders that no '
-      + 'longer exist.',
-      'The gate below this one was standing open when he reached it. Nobody has '
-      + 'found it open since.',
-    ],
-  },
-  reliquary: {
-    title: 'What He Sent Up',
-    lines: [
-      'For eleven weeks he sent things up. A map. A list of the dead, in a good '
-      + 'hand. A request for more lamp oil. One line about the singing, which the '
-      + 'Reliquary filed under acoustics.',
-      'Then the notes stopped, and the crusade sent a second man down to find out '
-      + 'why. That was the second crusade. This is the ninth.',
-    ],
-  },
-  choir: {
-    title: 'The Last Note',
-    lines: [
-      'The last thing Sir Baudouin sent up was not written. A chorister carried '
-      + 'it, and delivered it exactly, and would not say it twice:',
-      '"Do not send the others. I am close."',
-      'The crusade read this as encouragement, and sent six more.',
-    ],
-  },
-};
-
-/** Shown when you finally meet him. This is the only place the truth is told. */
-const REVEAL = {
-  title: 'The Ninth Crusader',
-  lines: [
-    'He is still here. Still close. He has been down here longer than the church '
-    + 'above him has stood, and he did not spend that time looking for the Relic.',
-    'He spent it waiting for the second man, and the third, and the eighth. Every '
-    + 'crusade the first one caused. He knows your name — he has known it since '
-    + 'the Siege Yards, because he is the one who wrote it on the roll.',
-    'He is not going to explain. He has been rehearsing this for nine crusades '
-    + 'and he is only going to get one attempt at it.',
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// BOSS LORE
-//
-// One panel each, the first time you lay eyes on them. Every entry states, in
-// fiction, exactly what the thing is about to do to you -- the mechanic is
-// never a surprise, only the fight is.
-// ---------------------------------------------------------------------------
-const BOSS_LORE = {
-  herald: {
-    title: 'the Herald of the Third Wall',
-    lines: [
-      'The Third Wall fell forty years ago and took the register with it. He has '
-      + 'kept the roll from memory ever since: every name that went down, and the '
-      + 'considerably shorter list of names that came back up.',
-      'He reads them aloud when he wants company. They are still down here, and '
-      + 'they still answer to their names.',
-    ],
-    mechanic: 'He calls the roll. Names answer.',
-  },
-  saintPerpetua: {
-    title: 'Saint Perpetua the Patient',
-    lines: [
-      'Martyred once, catalogued twice, and interred in a box that has been opened '
-      + 'more often than it has been closed. Her patience was not a virtue the '
-      + 'Reliquary awarded her. It was an observation.',
-      'She has never once been in a hurry to stay dead.',
-    ],
-    mechanic: 'Killing her is the first half of it.',
-  },
-  odoThePrecentor: {
-    title: 'Odo the Precentor',
-    lines: [
-      'He led the singing here when there was still a service to lead, and he has '
-      + 'not stood down. The Choir follows him because he has never paused long '
-      + 'enough to let them stop.',
-      'Distance is not something that happens to a voice in a room built to carry '
-      + 'one.',
-    ],
-    mechanic: 'He reaches you wherever he can be heard.',
-  },
-  baudouin: {
-    title: FIRST_CRUSADER,
-    lines: REVEAL.lines,
-    mechanic: 'He fights the way you fight. He has had practice.',
-  },
-};
-
 // ==== src/data/theme.js ===========================================
 // ---------------------------------------------------------------------------
 // THE THEME SEAM
@@ -3468,6 +3793,38 @@ class Game {
     this.level.doorLocked = false;
     this.level.tiles.set(this.level.door.x, this.level.door.y, Tiles.door);
     this.log('The door gives, and swings open.', 'good');
+  }
+
+  /**
+   * The rectangle the screen should be showing.
+   *
+   * Ordinarily that is the whole floor. Once the crusader is inside a boss
+   * arena it is the arena and its walls and nothing else -- the fight is the
+   * only thing left that can happen, the door is shut, and the rest of the
+   * floor is not somewhere they can go. The renderer scales whatever it is
+   * handed to fill the stage, so naming a smaller rectangle is the whole of
+   * "step into the room and the room fills the screen".
+   *
+   * Returns null for the ordinary case rather than the full floor, so a caller
+   * can tell "a fight is on" from "draw everything".
+   */
+  arenaView() {
+    const room = this.level.bossRoom;
+    if (!room || !this.level.inArena(this.player.x, this.player.y)) return null;
+
+    // One cell of margin so the room is drawn with its own walls around it
+    // rather than bleeding off the edge of the screen.
+    return {
+      x: Math.max(0, room.x - 1),
+      y: Math.max(0, room.y - 1),
+      w: Math.min(this.level.width - Math.max(0, room.x - 1), room.w + 2),
+      h: Math.min(this.level.height - Math.max(0, room.y - 1), room.h + 2),
+    };
+  }
+
+  /** The boss of the floor, alive or otherwise, for the bar above the fight. */
+  arenaBoss() {
+    return this.level.entities.find((e) => e.boss) ?? null;
   }
 
   tellStory(card) {
@@ -3974,232 +4331,6 @@ function descend(game) {
   return true;
 }
 
-// ==== src/data/icons.js ===========================================
-// ---------------------------------------------------------------------------
-// Creature icons.
-//
-// Drawn as single-colour silhouettes in unit space, filled with whatever colour
-// the renderer has already worked out for that entity. That is the whole reason
-// they are shapes rather than sprites: a fixed-colour bitmap could not fade
-// along the torch ramp or take a region's tint, and would sit at full
-// brightness while the floor around it went dark.
-//
-// There are only four monster colours, so *silhouette* has to carry identity.
-// The set is built around that: low four-legged things, upright figures told
-// apart by what they hold, wide winged things, and bosses that are simply
-// bigger and carry an emblem. At sixteen pixels a shape gets three or four
-// marks before it turns to mud, so none of these use more.
-// ---------------------------------------------------------------------------
-
-const head = (p, cx = 0.42, cy = 0.21, r = 0.125) => p.dot(cx, cy, r);
-
-/** The standard upright body: shoulders down to a hem. */
-const robe = (p, cx = 0.42, top = 0.35) => p.poly([
-  [cx - 0.16, top], [cx + 0.16, top], [cx + 0.21, 0.96], [cx - 0.21, 0.96],
-]);
-
-/** A heavier, broader body, for things that are hard to move. */
-const bulk = (p, cx = 0.46, top = 0.34) => p.poly([
-  [cx - 0.26, top], [cx + 0.26, top], [cx + 0.3, 0.96], [cx - 0.3, 0.96],
-]);
-
-const ICONS = {
-  // -- the crusader and what becomes of them ---------------------------------
-  player: (p) => {
-    head(p);
-    robe(p);
-    p.line([[0.5, 0.52], [0.78, 0.52]], 0.07);        // arm to the blade
-    p.line([[0.82, 0.16], [0.82, 0.78]], 0.09);       // sword, held upright
-    p.line([[0.7, 0.34], [0.94, 0.34]], 0.07);        // crossguard
-  },
-  // The same figure with nothing inside it. Meeting yourself should read as
-  // recognition before it reads as a monster.
-  revenant: (p) => {
-    p.ring(0.42, 0.21, 0.125, 0.07);
-    p.line([[0.26, 0.35], [0.21, 0.96]], 0.07);
-    p.line([[0.58, 0.35], [0.63, 0.96]], 0.07);
-    p.line([[0.26, 0.35], [0.58, 0.35]], 0.07);
-    p.line([[0.82, 0.2], [0.82, 0.78]], 0.07);
-  },
-  corpse: (p) => {
-    p.poly([[0.1, 0.78], [0.34, 0.62], [0.68, 0.62], [0.9, 0.78], [0.9, 0.88], [0.1, 0.88]]);
-  },
-
-  // -- The Siege Yards -------------------------------------------------------
-  campDog: (p) => {
-    p.poly([[0.16, 0.5], [0.7, 0.5], [0.7, 0.74], [0.16, 0.74]]);   // low body
-    p.poly([[0.66, 0.36], [0.94, 0.36], [0.94, 0.58], [0.66, 0.58]]); // head, thrust forward
-    p.line([[0.24, 0.74], [0.24, 0.96]], 0.09);
-    p.line([[0.62, 0.74], [0.62, 0.96]], 0.09);
-    p.line([[0.16, 0.5], [0.04, 0.3]], 0.08);                        // tail
-  },
-  deserter: (p) => {
-    p.poly([[0.3, 0.3], [0.42, 0.1], [0.54, 0.3]]);                  // hood
-    robe(p);
-    p.rect(0.6, 0.42, 0.2, 0.26);                                    // the pack he took
-  },
-  flagellant: (p) => {
-    head(p);
-    robe(p);
-    p.arc(0.6, 0.28, 0.3, Math.PI * 1.1, Math.PI * 1.9, 0.07);       // the scourge, mid-swing
-  },
-  crossbowman: (p) => {
-    head(p);
-    robe(p);
-    p.line([[0.14, 0.5], [0.86, 0.5]], 0.1);                         // the stave, held level
-    p.line([[0.5, 0.4], [0.5, 0.66]], 0.07);
-  },
-  herald: (p) => {
-    p.poly([[0.26, 0.3], [0.4, 0.12], [0.54, 0.3]]);                 // helm
-    bulk(p, 0.4);                                                    // very good armour
-    p.line([[0.82, 0.06], [0.82, 0.96]], 0.07);                      // the pole
-    p.poly([[0.82, 0.1], [0.99, 0.2], [0.82, 0.34]]);                // and the roll on it
-  },
-
-  // -- The Reliquary ---------------------------------------------------------
-  bonepicker: (p) => {
-    p.dot(0.36, 0.28, 0.12);
-    p.line([[0.44, 0.28], [0.78, 0.36]], 0.07);                      // the beak
-    p.poly([[0.22, 0.4], [0.5, 0.4], [0.58, 0.96], [0.16, 0.96]]);   // hunched
-  },
-  reliquaryMoth: (p) => {
-    p.poly([[0.5, 0.5], [0.06, 0.26], [0.1, 0.7]]);                  // wings, wide and low
-    p.poly([[0.5, 0.5], [0.94, 0.26], [0.9, 0.7]]);
-    p.dot(0.5, 0.52, 0.11);
-    p.line([[0.46, 0.36], [0.36, 0.18]], 0.05);                      // antennae
-    p.line([[0.54, 0.36], [0.64, 0.18]], 0.05);
-  },
-  ossuaryWarden: (p) => {
-    p.rect(0.3, 0.1, 0.36, 0.2);                                     // flat helm
-    bulk(p, 0.48, 0.32);
-    p.line([[0.2, 0.5], [0.76, 0.5]], 0.08);                         // the bar across it
-  },
-  boneSlinger: (p) => {
-    head(p, 0.38);
-    robe(p, 0.38);
-    p.arc(0.72, 0.42, 0.24, Math.PI * 0.6, Math.PI * 1.7, 0.06);     // the sling, wound up
-    p.dot(0.9, 0.3, 0.08);                                           // and what is in it
-  },
-  saintPerpetua: (p) => {
-    p.ring(0.44, 0.18, 0.2, 0.055);                                  // halo
-    p.dot(0.44, 0.24, 0.12);
-    p.poly([[0.2, 0.38], [0.68, 0.38], [0.8, 0.96], [0.08, 0.96]]);  // shroud, still on her
-  },
-
-  // -- The Choir -------------------------------------------------------------
-  chorister: (p) => {
-    p.poly([[0.3, 0.3], [0.44, 0.1], [0.58, 0.3]]);                  // cowl
-    robe(p, 0.44);
-    // The book has to reach past the shoulders or the robe swallows it.
-    p.rect(0.1, 0.54, 0.68, 0.15);
-    p.line([[0.44, 0.5], [0.44, 0.73]], 0.05);                       // its spine
-  },
-  censerbearer: (p) => {
-    head(p, 0.38);
-    robe(p, 0.38);
-    p.line([[0.56, 0.36], [0.84, 0.52]], 0.05);                      // the chain
-    p.dot(0.86, 0.62, 0.13);                                         // the censer, swinging
-  },
-  wingedThing: (p) => {
-    p.poly([[0.5, 0.18], [0.02, 0.06], [0.24, 0.5]]);                // wings, up and angular
-    p.poly([[0.5, 0.18], [0.98, 0.06], [0.76, 0.5]]);
-    p.poly([[0.38, 0.24], [0.62, 0.24], [0.56, 0.94], [0.44, 0.94]]);
-  },
-  psalmist: (p) => {
-    head(p, 0.34);
-    robe(p, 0.34);
-    p.arc(0.42, 0.3, 0.26, Math.PI * 1.75, Math.PI * 0.25, 0.055);   // a held note, carrying
-    p.arc(0.42, 0.3, 0.42, Math.PI * 1.8, Math.PI * 0.2, 0.05);
-  },
-  odoThePrecentor: (p) => {
-    p.dot(0.36, 0.2, 0.13);
-    p.poly([[0.14, 0.34], [0.58, 0.34], [0.66, 0.96], [0.06, 0.96]]);
-    p.line([[0.58, 0.4], [0.72, 0.18]], 0.07);                       // the hand that leads it
-    p.arc(0.5, 0.3, 0.44, Math.PI * 1.7, Math.PI * 0.3, 0.055);
-    p.arc(0.5, 0.3, 0.62, Math.PI * 1.75, Math.PI * 0.25, 0.05);
-  },
-
-  // -- The Empty Tomb --------------------------------------------------------
-  graveWraith: (p) => {
-    p.poly([                                                         // no feet, a torn hem
-      [0.5, 0.06], [0.78, 0.3], [0.82, 0.8],
-      [0.66, 0.68], [0.5, 0.9], [0.34, 0.68], [0.18, 0.8], [0.22, 0.3],
-    ]);
-  },
-  pilgrimHusk: (p) => {
-    p.ring(0.4, 0.22, 0.13, 0.06);                                   // hollow, where a face was
-    robe(p, 0.4);
-    p.line([[0.78, 0.14], [0.78, 0.96]], 0.06);                      // the staff, still walking
-  },
-  sepulchreWorm: (p) => {
-    p.line([[0.08, 0.86], [0.3, 0.62], [0.56, 0.84], [0.8, 0.56], [0.86, 0.34]], 0.16);
-    p.dot(0.86, 0.28, 0.12);                                         // the end that bites
-  },
-  mourner: (p) => {
-    p.dot(0.44, 0.15, 0.11);                                         // bowed head
-    p.poly([[0.44, 0.24], [0.86, 0.96], [0.02, 0.96]]);              // veiled to the floor
-  },
-  baudouin: (p) => {
-    p.poly([[0.26, 0.3], [0.4, 0.1], [0.54, 0.3]]);                  // a crusader's helm
-    bulk(p, 0.4);
-    p.line([[0.4, 0.42], [0.4, 0.84]], 0.08);                        // the cross he came under
-    p.line([[0.24, 0.56], [0.56, 0.56]], 0.08);
-    p.line([[0.84, 0.14], [0.84, 0.9]], 0.08);                       // and the sword he stayed with
-  },
-
-  // -- What is lying on the floor -------------------------------------------
-  //
-  // One icon per *kind* rather than per item: twenty-nine distinct shapes would
-  // be indistinguishable at this size, and the pack panel is where an item's
-  // real identity lives. These only have to answer "is that worth walking to".
-  itemPhial: (p) => {
-    p.rect(0.42, 0.16, 0.16, 0.16);                                  // neck
-    p.poly([[0.3, 0.34], [0.7, 0.34], [0.78, 0.82], [0.22, 0.82]]);  // and what is in it
-  },
-  itemSpark: (p) => {
-    p.poly([[0.5, 0.04], [0.6, 0.4], [0.96, 0.5], [0.6, 0.6], [0.5, 0.96],
-      [0.4, 0.6], [0.04, 0.5], [0.4, 0.4]]);
-  },
-  itemWard: (p) => {
-    p.rect(0.14, 0.34, 0.72, 0.32);                                  // a rolled psalm
-    p.ring(0.2, 0.5, 0.16, 0.08);
-    p.ring(0.8, 0.5, 0.16, 0.08);
-  },
-  itemStep: (p) => {
-    p.line([[0.2, 0.26], [0.56, 0.5], [0.2, 0.74]], 0.11);           // going, gone
-    p.line([[0.56, 0.26], [0.9, 0.5], [0.56, 0.74]], 0.11);
-  },
-  itemSword: (p) => {
-    p.line([[0.22, 0.84], [0.82, 0.2]], 0.11);                       // blade
-    p.line([[0.56, 0.2], [0.84, 0.48]], 0.09);                       // crossguard
-    p.dot(0.2, 0.86, 0.09);                                          // pommel
-  },
-  itemBow: (p) => {
-    p.line([[0.2, 0.16], [0.2, 0.84]], 0.1);                         // the limb
-    p.line([[0.14, 0.5], [0.9, 0.5]], 0.11);                         // the stock
-    p.dot(0.86, 0.5, 0.1);
-  },
-  itemShield: (p) => {
-    p.poly([[0.2, 0.14], [0.8, 0.14], [0.8, 0.54], [0.5, 0.9], [0.2, 0.54]]);
-  },
-  itemArmour: (p) => {
-    p.poly([[0.28, 0.2], [0.42, 0.2], [0.5, 0.32], [0.58, 0.2], [0.72, 0.2],
-      [0.84, 0.86], [0.16, 0.86]]);
-  },
-  itemSeal: (p) => {
-    p.ring(0.5, 0.5, 0.36, 0.13);
-    p.line([[0.5, 0.26], [0.5, 0.74]], 0.1);
-    p.line([[0.32, 0.5], [0.68, 0.5]], 0.1);
-  },
-  itemRelic: (p) => {
-    p.poly([[0.5, 0.02], [0.58, 0.38], [0.96, 0.5], [0.58, 0.62], [0.5, 0.98],
-      [0.42, 0.62], [0.04, 0.5], [0.42, 0.38]]);
-    p.ring(0.5, 0.5, 0.2, 0.07);                                     // whatever it is
-  },
-};
-
-const ICON_KEYS = Object.keys(ICONS);
-
 // ==== src/ui/painter.js ===========================================
 // A tiny drawing surface for creature icons.
 //
@@ -4283,8 +4414,13 @@ function makePainter(ctx) {
 //
 // Terrain is drawn as ground rather than lettering: walls are filled mass with
 // a lit rim on every face that meets open floor, and floors are a tinted wash.
-// Only things that are *objects* -- stairs, gates, doors, monsters, items, the
-// crusader -- are still drawn as glyphs.
+// Only things that are *objects* are drawn on top of it -- doors, gates,
+// monsters, items and the crusader as icons, the stairs as the one piece of
+// punctuation worth keeping.
+//
+// The view is not always the floor. Inside a boss arena it is the arena, scaled
+// up to fill the same stage, with health bars in bands above and below it; see
+// `layout` and `Game.arenaView`.
 //
 // This is what makes the four region silhouettes legible. In '#' and '.' the
 // Choir's pillared halls and the Empty Tomb's caves look nearly identical; as
@@ -4325,34 +4461,65 @@ class Renderer {
   }
 
   /**
-   * Scale the glyph grid to the space available rather than assuming a fixed
-   * cell size. This is what keeps the whole game inside one viewport on any
-   * screen instead of pushing the page into a scrollbar.
+   * Remember how much room there is. The cell size is not decided here any
+   * more: it depends on how much of the map is being shown, and that changes
+   * the moment a crusader steps into a boss arena.
    */
   fit(availableWidth, availableHeight, cols, rows) {
+    this.available = { w: Math.max(1, availableWidth), h: Math.max(1, availableHeight) };
+    this.mapCols = cols;
+    this.mapRows = rows;
+    this.laidOut = null;                      // force a re-layout on the next draw
+  }
+
+  /**
+   * Work out the cell size for one view and size the canvas to match.
+   *
+   * A view of the whole floor gives small cells; a view of one room gives large
+   * ones, from the same code and the same stage. Bands are reserved above and
+   * below for the health bars when there are health bars to draw, so the bars
+   * never sit on top of the floor being fought over.
+   */
+  layout(view, withBars) {
+    const key = [view.x, view.y, view.w, view.h, withBars,
+      this.available.w, this.available.h].join(':');
+    if (this.laidOut === key) return;
+    this.laidOut = key;
+
+    // Sized from the stage rather than from the cell, because the cell size is
+    // what we are about to work out.
+    this.bandH = withBars ? Math.max(18, Math.round(this.available.h * 0.075)) : 0;
+
     // Square cells. They were taller than wide because a cell used to hold a
     // monospace letter; nothing depends on a text grid any more, and square
     // ground reads as tiles rather than as bricks stood on end.
     const cell = Math.min(
-      Math.floor(availableWidth / cols),
-      Math.floor(availableHeight / rows),
+      Math.floor(this.available.w / view.w),
+      Math.floor((this.available.h - this.bandH * 2) / view.h),
     );
 
     this.cellW = Math.max(4, cell);
     this.cellH = this.cellW;
-    this.resize(cols, rows);
+    this.originX = view.x;
+    this.originY = view.y;
+    this.resize(view.w * this.cellW, view.h * this.cellH + this.bandH * 2);
   }
 
-  resize(widthInCells, heightInCells) {
+  resize(w, h) {
     const dpr = globalThis.devicePixelRatio || 1;
-    const w = widthInCells * this.cellW;
-    const h = heightInCells * this.cellH;
+    this.width = w;
+    this.height = h;
     this.canvas.width = w * dpr;
     this.canvas.height = h * dpr;
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+
+  /** Cell coordinates to pixels, through whatever view is current. */
+  px(x) { return (x - this.originX) * this.cellW; }
+
+  py(y) { return (y - this.originY) * this.cellH + this.bandH; }
 
   /**
    * The shades this floor is drawn in, derived from the region's own two
@@ -4398,22 +4565,44 @@ class Renderer {
     const colors = game.palette();
     const shade = this.shades(colors);
 
+    this.available ??= { w: level.width * this.cellW, h: level.height * this.cellH };
+
+    // Inside a boss arena the screen is the arena. Everywhere else it is the
+    // floor. The bars come with the fight, not with the zoom, so a room the
+    // boss is already dead in still reads as a room.
+    const arena = game.arenaView();
+    const view = arena ?? { x: 0, y: 0, w: level.width, h: level.height };
+    this.layout(view, Boolean(arena));
+    this.view = view;
+
     this.eye = { x: game.player.x, y: game.player.y };
     this.radius = Math.max(1, game.theme.fovRadius);
 
     ctx.fillStyle = colors.bg;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillRect(0, 0, this.width, this.height);
 
     this.drawGround(level, shade);
     this.drawWallFaces(level, shade);
     this.drawTileGlyphs(level, colors);
     this.drawEntities(level, colors);
+    if (arena) this.drawArenaBars(game, colors);
+  }
+
+  /** The cells this view covers, clamped to the map. */
+  bounds(level) {
+    return {
+      x0: Math.max(0, this.view.x),
+      y0: Math.max(0, this.view.y),
+      x1: Math.min(level.width, this.view.x + this.view.w),
+      y1: Math.min(level.height, this.view.y + this.view.h),
+    };
   }
 
   /** Pass one: every known cell is filled, as mass or as floor. */
   drawGround(level, shade) {
-    for (let y = 0; y < level.height; y++) {
-      for (let x = 0; x < level.width; x++) {
+    const { x0, y0, x1, y1 } = this.bounds(level);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         const visible = level.visible.get(x, y);
         if (!visible && !level.explored.get(x, y)) continue;
 
@@ -4440,9 +4629,10 @@ class Renderer {
   drawWallFaces(level, shade) {
     const { ctx } = this;
     const thickness = Math.max(1, Math.round(this.cellH * 0.09));
+    const { x0, y0, x1, y1 } = this.bounds(level);
 
-    for (let y = 0; y < level.height; y++) {
-      for (let x = 0; x < level.width; x++) {
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         const visible = level.visible.get(x, y);
         if (!visible && !level.explored.get(x, y)) continue;
         if (level.tiles.get(x, y).walkable) continue;
@@ -4464,8 +4654,8 @@ class Renderer {
           ctx.fillStyle = rung < 0 ? shade.rimDim
             : (side === 'bottom' ? shade.face[rung] : shade.rim[rung]);
 
-          const px = x * this.cellW;
-          const py = y * this.cellH;
+          const px = this.px(x);
+          const py = this.py(y);
           if (side === 'top') ctx.fillRect(px, py, this.cellW, thickness);
           if (side === 'bottom') ctx.fillRect(px, py + this.cellH - thickness, this.cellW, thickness);
           if (side === 'left') ctx.fillRect(px, py, thickness, this.cellH);
@@ -4475,11 +4665,19 @@ class Renderer {
     }
   }
 
-  /** Pass three: terrain that is an object rather than ground keeps its glyph. */
+  /**
+   * Pass three: terrain that is an object rather than ground. Doors and gates
+   * are drawn as symbols -- the same unit-space silhouettes the creatures use --
+   * because a barred door is a thing in the room, not a character in a sentence.
+   * Anything without one falls back to its glyph, so a new tile is never blank.
+   */
   drawTileGlyphs(level, colors) {
     this.prepareText();
-    for (let y = 0; y < level.height; y++) {
-      for (let x = 0; x < level.width; x++) {
+    this.painter ??= makePainter(this.ctx);
+    const { x0, y0, x1, y1 } = this.bounds(level);
+
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         const visible = level.visible.get(x, y);
         if (!visible && !level.explored.get(x, y)) continue;
 
@@ -4487,10 +4685,30 @@ class Renderer {
         if (!tile.drawGlyph) continue;
         const base = colors[tile.key] ?? colors.text;
         const faded = mix(base, colors.bg, REMEMBERED);
-        this.putGlyph(x, y, tile.glyph,
-          visible ? mix(base, faded, this.lightAt(x, y) / LIGHT_STEPS) : faded);
+        const tint = visible
+          ? mix(base, faded, this.lightAt(x, y) / LIGHT_STEPS)
+          : faded;
+
+        const symbol = TILE_ICONS[tile.key];
+        if (!symbol) {
+          this.putGlyph(x, y, tile.glyph, tint);
+          continue;
+        }
+        this.paintIcon(symbol, x, y, 0.88, tint);
       }
     }
+  }
+
+  /** Place the painter on one cell and run an icon into it. */
+  paintIcon(icon, x, y, scale, color) {
+    const w = this.cellW * scale;
+    const h = this.cellH * scale;
+    this.painter.place(
+      this.px(x) + (this.cellW - w) / 2,
+      this.py(y) + (this.cellH - h) / 2,
+      w, h, color,
+    );
+    icon(this.painter);
   }
 
   /**
@@ -4501,12 +4719,11 @@ class Renderer {
     this.prepareText();
     this.painter ??= makePainter(this.ctx);
 
-    const baseW = this.cellW * 0.94;
-    const baseH = this.cellH * 0.94;
-
+    const { x0, y0, x1, y1 } = this.bounds(level);
     const sorted = [...level.entities].sort((a, b) => layer(a) - layer(b));
     for (const e of sorted) {
       if (!level.visible.get(e.x, e.y)) continue;
+      if (e.x < x0 || e.x >= x1 || e.y < y0 || e.y >= y1) continue;
 
       // Something at the far edge of the torch is harder to make out, which is
       // most of what makes a lit radius feel like light rather than a mask.
@@ -4525,17 +4742,76 @@ class Renderer {
       // A boss draws past the edges of its own cell. It is the only thing that
       // does, and it is the cheapest way to make one loom without giving it a
       // second tile to stand on.
-      const scale = e.iconScale ?? 1;
-      const iconW = baseW * scale;
-      const iconH = baseH * scale;
-
-      this.painter.place(
-        e.x * this.cellW + (this.cellW - iconW) / 2,
-        e.y * this.cellH + (this.cellH - iconH) / 2,
-        iconW, iconH, tint,
-      );
-      icon(this.painter);
+      this.paintIcon(icon, e.x, e.y, 0.94 * (e.iconScale ?? 1), tint);
     }
+  }
+
+  /**
+   * The two bars a boss fight is actually fought on.
+   *
+   * The crusader's health has always been in the side panel, which is the right
+   * place for it while you are walking a corridor and the wrong place for it
+   * while something is hitting you: in a fight the eye does not leave the room.
+   * The boss's health was nowhere at all -- you could only infer it from how
+   * long you had been swinging. Both go on the screen for the length of the
+   * fight, above and below the room, and nowhere else in the game.
+   */
+  drawArenaBars(game, colors) {
+    const { ctx } = this;
+    const player = game.player;
+    const boss = game.arenaBoss();
+
+    // A band dark enough that a bar drawn on it is a bar and not a smear.
+    ctx.fillStyle = mix(colors.bg, '#000000', 0.45);
+    ctx.fillRect(0, 0, this.width, this.bandH);
+    ctx.fillRect(0, this.height - this.bandH, this.width, this.bandH);
+
+    const font = Math.max(9, Math.round(this.bandH * 0.3));
+    ctx.font = font + 'px ' + (this.theme.fontFamily ?? 'monospace');
+    ctx.textBaseline = 'middle';
+
+    if (boss) {
+      const hp = Math.max(0, boss.hp);
+      this.hpBar(0, colors, {
+        label: boss.name,
+        // A saint who has already declined once says so on the bar, because
+        // that is the number the second half of the fight is fought against.
+        note: boss.alive
+          ? hp + ' / ' + boss.maxHp + (boss.hasRisen ? '   · risen' : '')
+          : 'finished',
+        ratio: hp / Math.max(1, boss.maxHp),
+        fill: boss.alive ? (colors[boss.color] ?? colors.bad) : colors.textDim,
+      });
+    }
+
+    const ratio = Math.max(0, player.hp) / Math.max(1, player.maxHp);
+    this.hpBar(this.height - this.bandH, colors, {
+      label: game.crusaderName,
+      note: Math.max(0, player.hp) + ' / ' + player.maxHp,
+      ratio,
+      fill: ratio > 0.5 ? colors.good : ratio > 0.25 ? colors.notable : colors.bad,
+    });
+  }
+
+  /** One labelled bar filling the width of a band. */
+  hpBar(top, colors, { label, note, ratio, fill }) {
+    const { ctx } = this;
+    const pad = Math.max(5, Math.round(this.bandH * 0.16));
+    const barH = Math.max(3, Math.round(this.bandH * 0.26));
+    const barY = top + this.bandH - barH - Math.round(pad / 2);
+    const barW = this.width - pad * 2;
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.text;
+    ctx.fillText(label, pad, (top + barY) / 2);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = colors.textDim;
+    ctx.fillText(note, this.width - pad, (top + barY) / 2);
+
+    ctx.fillStyle = mix(colors.bg, '#ffffff', 0.14);
+    ctx.fillRect(pad, barY, barW, barH);
+    ctx.fillStyle = fill;
+    ctx.fillRect(pad, barY, Math.max(0, Math.min(1, ratio)) * barW, barH);
   }
 
   prepareText() {
@@ -4548,12 +4824,12 @@ class Renderer {
 
   fillCell(x, y, color) {
     this.ctx.fillStyle = color;
-    this.ctx.fillRect(x * this.cellW, y * this.cellH, this.cellW, this.cellH);
+    this.ctx.fillRect(this.px(x), this.py(y), this.cellW, this.cellH);
   }
 
   putGlyph(x, y, glyph, color) {
     this.ctx.fillStyle = color;
-    this.ctx.fillText(glyph, x * this.cellW + this.cellW / 2, y * this.cellH + this.cellH / 2 + 1);
+    this.ctx.fillText(glyph, this.px(x) + this.cellW / 2, this.py(y) + this.cellH / 2 + 1);
   }
 }
 
@@ -5545,7 +5821,8 @@ window.addEventListener('resize', () => fitScreen());
 // Debug hook: poke at the live game from the browser console.
 globalThis.crusade = {
   get game() { return game; },
-  memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, ICONS, gainXp,
+  memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp,
+  ICONS, TILE_ICONS,
   makePainter,                                 // for reviewing the icon set
 };
 

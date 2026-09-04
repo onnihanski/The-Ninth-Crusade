@@ -2,7 +2,9 @@ import { chebyshev } from '../engine/grid.js';
 import { makeMonster, makeItem } from './entity.js';
 import { effectivePower, effectiveDefense } from './status.js';
 import { monsterTable } from '../data/monsters.js';
+import { ICONS } from '../data/icons.js';
 import { ITEMS } from '../data/items.js';
+import { BOSS_RISE } from '../data/lore.js';
 
 // Each boss does exactly what its lore panel says it does. The panel is written
 // from the mechanic rather than the other way round, so a player who reads it
@@ -88,6 +90,14 @@ export function takeBossTurn(game, boss) {
 /**
  * Death, intercepted. Saint Perpetua declines it once. Returns true if she is
  * still standing, in which case the caller must not finish her.
+ *
+ * Getting up is the only thing this boss does, and for a long time it did not
+ * land: two lines of log, in the middle of a fight nobody reads the log
+ * through, and a health bar that quietly went back up. A player could finish
+ * the floor without ever understanding what had happened to them. It now does
+ * what the rest of this game's turns of story do -- stops everything and says
+ * so -- and she changes shape, so the room carries the news for the rest of the
+ * fight rather than the message log carrying it for one turn.
  */
 export function bossRises(game, boss) {
   if (boss.bossTrait !== 'risesAgain' || boss.hasRisen) return false;
@@ -95,8 +105,19 @@ export function bossRises(game, boss) {
   boss.hasRisen = true;
   boss.hp = Math.max(1, Math.round(boss.maxHp * RISEN_SHARE));
   boss.defense = Math.max(0, boss.defense - 1);
-  game.log('Saint Perpetua gets up again, without complaint.', 'mythic');
+
+  // Second half, and she looks like it from across the room.
+  if (ICONS[boss.iconKey + 'Risen']) boss.iconKey += 'Risen';
+
+  game.log(boss.name + ' gets up again, without complaint.', 'mythic');
   game.log('This was the first half of it.', 'textDim');
+
+  const card = BOSS_RISE[boss.key];
+  if (card) {
+    game.tellStory({
+      kind: 'boss', title: card.title, lines: card.lines, mechanic: card.mechanic,
+    });
+  }
   return true;
 }
 

@@ -400,8 +400,9 @@ This is what makes the region silhouettes legible. In `#` and `.` the Choir's
 pillared halls and the Empty Tomb's caves look nearly identical; as solid mass
 they read as completely different places.
 
-**Creatures are drawn as icons**, not letters — 23 single-colour silhouettes
-for the twenty monsters, the crusader, the revenant and the corpse marker. They
+**Creatures are drawn as icons**, not letters — 24 single-colour silhouettes
+for the twenty monsters, the crusader, the revenant, the corpse marker and the
+one boss with a second shape to change into. They
 are vector shapes in unit space rather than sprites, which is what lets them be
 filled with whatever colour the renderer has already worked out and fade along
 the torch ramp; a fixed-colour bitmap would sit at full brightness while the
@@ -409,6 +410,23 @@ floor around it went dark. There are only four monster colours, so silhouette
 carries identity: low four-legged things, upright figures told apart by what
 they hold, wide winged things, and bosses that are bigger and carry an emblem.
 The revenant is the player's own icon drawn hollow.
+
+**Doors and gates are symbols too.** They were the last things on the map still
+drawn as punctuation, which made the three tiles a crusader actually has to make
+a decision about look like syntax in the middle of a drawn room. A single colour
+gives you exactly one lever — hollow against solid — and the set is built on it:
+
+| | drawn as | means |
+|---|---|---|
+| door | a hollow pointed arch | you can see through it, and walk through it |
+| barred door | the same arch, two beams across | the door that shut behind you |
+| sealed gate | a portcullis — two rails, three bars, the seal where they cross | the way down, and why you are not taking it |
+
+The first draft put a single beam across the arch and produced the letter `A`,
+which is precisely the thing this game took off the map to begin with. Two beams
+is a barred door and reads as nothing else. The stairs keep their `>`: it is the
+one piece of punctuation every roguelike player already reads without being
+taught.
 
 Anything without an icon — items, and anything added later — keeps its glyph,
 so the map can never come up blank. `tools`-free: no atlas, no image files, and
@@ -454,6 +472,46 @@ spawns in there — only what the Herald calls in — and you cannot blink out.
 Once the boss is dead the door is just a door again: walk back in for the loot,
 and nothing shuts behind you.
 
+### The room fills the screen
+
+Stepping through a boss door is the one moment the game stops being a floor
+plan. The screen stops showing the floor and shows the **room** — the arena and
+its own walls, scaled up to fill the stage, and nothing else. There is nowhere
+else you can go and nothing else that can happen, so there is no reason to keep
+drawing it.
+
+The whole of it is `Game.arenaView()` returning a rectangle instead of null. The
+renderer already scaled whatever it was handed to fill the space available, so
+naming a smaller rectangle is the entire feature — and walking back out through
+a dead boss's door returns the floor with no second code path.
+
+Two **health bars** come with the fight, above the room and below it, and appear
+nowhere else in the game. The crusader's health lives in the side panel, which
+is the right place for it while you are walking a corridor and the wrong place
+for it while something is hitting you: in a fight the eye does not leave the
+room. The boss's health was nowhere at all — you could only infer it from how
+long you had been swinging.
+
+Fog of war is left alone in there. Lighting the whole room would have been the
+prettier picture and a quiet rules change: `level.visible` is what monster
+sight, firing and smite all read, so a fully lit arena is one you can shoot
+across.
+
+### Saint Perpetua gets up
+
+The second boss does one thing, and for a long time it did not land. She
+declines her own death: at zero she stands back up with 40% of her health and
+one less armour. That arrived as two lines in a message log nobody reads during
+a fight, and a health bar that quietly went back up — a player could finish the
+floor without ever working out what had happened to them.
+
+It now does what every other turn of this game's story does: it **stops
+everything and says so**, on a card, the way her entrance does. And she changes
+shape — the halo cracks open, the shroud slips off one shoulder, an arm comes
+out of it — so the room carries the news for the rest of the fight instead of
+the log carrying it for one turn. The bar above her says `· risen` next to the
+numbers, because that is the number the second half is fought against.
+
 ## The story
 
 Sir Baudouin IX went down first, before the crusade had a number. His story is
@@ -493,14 +551,14 @@ src/
     progress.js    experience, levels, regeneration
     memorial.js    THE DUNGEON REMEMBERS -- persistence across runs
   ui/        browser layer -- the whole game fits one viewport, never scrolls
-    render.js      canvas renderer -- filled terrain, icons for creatures
+    render.js      canvas renderer -- filled terrain, icons, the arena view
     painter.js     unit-space drawing surface the icons are described against
     input.js       key bindings
     panel.js       stats, seals, pack, message log
   data/      >>> the theme seam <<<
     theme.js       palette, flavour strings, tone
     lore.js        the first crusader's story, and each boss's history
-    icons.js       one silhouette per creature
+    icons.js       one silhouette per creature, and one per door and gate
     regions.js     the four regions and their bosses
     monsters.js    monster roster
     items.js       relics, arms, armour and seals
@@ -508,7 +566,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    308 assertions, including a full run to depth 12
+tests/smoke.mjs    334 assertions, including a full run to depth 12
 ```
 
 ### Tone

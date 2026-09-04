@@ -7,7 +7,7 @@ import { makeItem, makeMonster } from './game/entity.js';
 import { gainXp } from './game/progress.js';
 import { ITEMS } from './data/items.js';
 import { MONSTERS } from './data/monsters.js';
-import { ICONS } from './data/icons.js';
+import { ICONS, TILE_ICONS } from './data/icons.js';
 import { THEME } from './data/theme.js';
 import { roman } from './data/names.js';
 import { Renderer } from './ui/render.js';
@@ -254,7 +254,8 @@ window.addEventListener('resize', () => fitScreen());
 // Debug hook: poke at the live game from the browser console.
 globalThis.crusade = {
   get game() { return game; },
-  memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, ICONS, gainXp,
+  memorial, newGame, makeItem, makeMonster, ITEMS, MONSTERS, gainXp,
+  ICONS, TILE_ICONS,
   makePainter,                                 // for reviewing the icon set
 };
 

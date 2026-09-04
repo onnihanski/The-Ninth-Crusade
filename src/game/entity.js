@@ -47,7 +47,10 @@ export function makePlayer(x, y, name) {
 export function makeMonster(spec, x, y) {
   return makeEntity({
     x, y,
-    glyph: spec.glyph, color: spec.color, name: spec.name, iconKey: spec.key,
+    glyph: spec.glyph, color: spec.color, name: spec.name,
+    // `key` is what it is; `iconKey` is how it is drawn right now. They start
+    // the same and part company when something changes shape mid-fight.
+    key: spec.key, iconKey: spec.key,
     blocks: true, speed: spec.speed,
     maxHp: spec.maxHp, hp: spec.maxHp,
     power: spec.power, defense: spec.defense,

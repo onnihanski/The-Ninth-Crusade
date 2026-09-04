@@ -44,6 +44,25 @@ export const GATE_CHAPTERS = {
   },
 };
 
+/**
+ * Told the moment a boss declines its own death. Only Saint Perpetua has one,
+ * because only Saint Perpetua does it -- and the card exists because the thing
+ * she does was invisible: two lines of log during a fight nobody is reading the
+ * log through, and then a health bar that quietly refilled.
+ */
+export const BOSS_RISE = {
+  saintPerpetua: {
+    title: 'She Declines',
+    lines: [
+      'She goes down the way the catalogue says she went down the first time: '
+      + 'without argument, and without any particular interest in staying there.',
+      'Then she gets up, brushes off the same shoulder, and looks at you as '
+      + 'though you have both been kept waiting.',
+    ],
+    mechanic: 'That was the first half. She rises with less armour and less left.',
+  },
+};
+
 /** Shown when you finally meet him. This is the only place the truth is told. */
 export const REVEAL = {
   title: 'The Ninth Crusader',

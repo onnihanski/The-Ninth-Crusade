@@ -448,6 +448,38 @@ export class Game {
     this.log('The door gives, and swings open.', 'good');
   }
 
+  /**
+   * The rectangle the screen should be showing.
+   *
+   * Ordinarily that is the whole floor. Once the crusader is inside a boss
+   * arena it is the arena and its walls and nothing else -- the fight is the
+   * only thing left that can happen, the door is shut, and the rest of the
+   * floor is not somewhere they can go. The renderer scales whatever it is
+   * handed to fill the stage, so naming a smaller rectangle is the whole of
+   * "step into the room and the room fills the screen".
+   *
+   * Returns null for the ordinary case rather than the full floor, so a caller
+   * can tell "a fight is on" from "draw everything".
+   */
+  arenaView() {
+    const room = this.level.bossRoom;
+    if (!room || !this.level.inArena(this.player.x, this.player.y)) return null;
+
+    // One cell of margin so the room is drawn with its own walls around it
+    // rather than bleeding off the edge of the screen.
+    return {
+      x: Math.max(0, room.x - 1),
+      y: Math.max(0, room.y - 1),
+      w: Math.min(this.level.width - Math.max(0, room.x - 1), room.w + 2),
+      h: Math.min(this.level.height - Math.max(0, room.y - 1), room.h + 2),
+    };
+  }
+
+  /** The boss of the floor, alive or otherwise, for the bar above the fight. */
+  arenaBoss() {
+    return this.level.entities.find((e) => e.boss) ?? null;
+  }
+
   tellStory(card) {
     this.storyQueue.push(card);
   }

@@ -23,7 +23,7 @@ import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
 import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
-import { ICONS, ICON_KEYS } from '../src/data/icons.js';
+import { ICONS, ICON_KEYS, TILE_ICONS, TILE_ICON_KEYS } from '../src/data/icons.js';
 import { generateLevel } from '../src/world/mapgen.js';
 import { RNG } from '../src/engine/rng.js';
 import { takeAiTurn } from '../src/game/ai.js';
@@ -1404,13 +1404,31 @@ section('boss mechanics');
   {
     const { g, boss } = bossArena(6);
     check('the saint rises again', boss.bossTrait === 'risesAgain');
+    const shapeBefore = boss.iconKey;
+    while (g.pendingStory()) g.dismissStory();          // clear her entrance card
+
     damage(g, boss, 9999, g.player);
     check('killing her the first time does not', boss.alive && boss.hp > 0);
     check('she gets back up with less of her', boss.hp < boss.maxHp);
     check('and says so', g.messages.some((m) => m.text.includes('gets up again')));
+
+    // The whole mechanic used to pass by in two lines of log. It now stops the
+    // game the way every other turn of the story does, and she looks different
+    // for the rest of the fight.
+    const card = g.pendingStory();
+    check('getting up stops the game and tells you why', Boolean(card));
+    check('and the card says what it costs her',
+      Boolean(card?.mechanic) && card.mechanic.includes('first half'));
+    check('she is drawn as something else afterwards', boss.iconKey !== shapeBefore);
+    check('and that shape is one the icon set has',
+      typeof ICONS[boss.iconKey] === 'function');
+    check('she is still herself underneath', boss.key === 'saintPerpetua');
+    g.dismissStory();
+
     damage(g, boss, 9999, g.player);
     check('the second time takes', !boss.alive);
     check('she does not rise twice', boss.hasRisen === true);
+    check('and it is told only once', !g.pendingStory());
   }
 
   // Odo reaches you wherever he can be heard.
@@ -1687,6 +1705,47 @@ section('boss arenas');
     return true;
   })());
 
+  // -- the room fills the screen --------------------------------------------
+  //
+  // Stepping through a boss door is the one moment the game stops being a
+  // floor plan. `arenaView` is the whole of it: the renderer scales whatever
+  // rectangle it is handed to fill the stage, so naming a smaller one is what
+  // makes the room arrive.
+  {
+    const v = invincible(new Game({ seed: 8801, memorial: new Memorial(memoryStorage()) }));
+    v.buildLevel(2);
+    check('an ordinary floor is drawn as a whole floor', v.arenaView() === null);
+
+    v.buildLevel(3);
+    check('and so is a boss floor you are only standing on', v.arenaView() === null);
+    check('there is a boss on it to put a bar above', Boolean(v.arenaBoss()));
+
+    v.enterArena();
+    const view = v.arenaView();
+    const room = v.level.bossRoom;
+    check('stepping inside makes the room the view', Boolean(view));
+    check('the view is the room and its own walls',
+      view.x === room.x - 1 && view.y === room.y - 1
+      && view.w === room.w + 2 && view.h === room.h + 2);
+    check('which is a great deal less floor than the floor',
+      view.w * view.h < v.level.width * v.level.height / 3);
+    check('and never reaches off the map',
+      view.x >= 0 && view.y >= 0
+      && view.x + view.w <= v.level.width && view.y + view.h <= v.level.height);
+    check('the crusader is inside what is being drawn',
+      v.player.x >= view.x && v.player.x < view.x + view.w
+      && v.player.y >= view.y && v.player.y < view.y + view.h);
+
+    // Walking back out of a room whose boss is dead returns the floor.
+    const inside = v.level.entities.find((e) => e.boss);
+    inside.alive = false;
+    inside.hp = 0;
+    v.unlockArena();
+    v.player.x = v.level.door.x;
+    v.player.y = v.level.door.y;
+    check('and the floor comes back when you leave', v.arenaView() === null);
+  }
+
   const g = invincible(new Game({ seed: 5100, memorial: new Memorial(memoryStorage()) }));
   g.buildLevel(3);
   const boss = g.level.entities.find((e) => e.boss);
@@ -1784,7 +1843,13 @@ section('creature icons');
 {
   const CREATURES = [...Object.keys(MONSTERS), 'player', 'revenant', 'corpse'];
   const ITEM_ICONS = [...new Set(Object.values(ITEMS).map(itemIcon).filter(Boolean))];
-  const ALL = [...CREATURES, ...ITEM_ICONS];
+
+  // A creature that changes shape mid-fight gets a second icon, named for the
+  // state rather than the creature. Only one thing does this, and the naming is
+  // the contract: `bosses.js` swaps to `<key>Risen` without being told it
+  // exists, so a variant whose name does not match is a variant never drawn.
+  const VARIANTS = ICON_KEYS.filter((key) => key.endsWith('Risen'));
+  const ALL = [...CREATURES, ...VARIANTS, ...ITEM_ICONS];
 
   check('every creature has an icon',
     CREATURES.every((key) => typeof ICONS[key] === 'function'));
@@ -1792,6 +1857,18 @@ section('creature icons');
     Object.values(ITEMS).every((spec) => typeof ICONS[itemIcon(spec)] === 'function'));
   check('no icon is defined for something that does not exist',
     ICON_KEYS.every((key) => ALL.includes(key)));
+
+  // The one boss that declines its own death is the one boss with a second
+  // shape, and every second shape belongs to such a boss.
+  check('every risen shape belongs to a boss that actually rises',
+    VARIANTS.length > 0 && VARIANTS.every((key) => {
+      const base = key.slice(0, -'Risen'.length);
+      return MONSTERS[base]?.bossTrait === 'risesAgain';
+    }));
+  check('every boss that rises has a shape to rise into',
+    Object.entries(MONSTERS)
+      .filter(([, spec]) => spec.bossTrait === 'risesAgain')
+      .every(([key]) => typeof ICONS[key + 'Risen'] === 'function'));
   check('items are drawn by kind, not one shape each',
     ITEM_ICONS.length < Object.keys(ITEMS).length / 2);
   check('the things that end a run are told apart from ordinary loot',
@@ -1862,6 +1939,64 @@ section('creature icons');
   const biggestClash = Math.max(...[...bySignature.values()].map((g) => g.length));
   check('monster silhouettes are built from varied shapes (largest identical group: '
     + biggestClash + ')', biggestClash <= 4);
+
+  // -- doors and gates ------------------------------------------------------
+  //
+  // The three tiles a crusader has to make a decision about were the last
+  // things on the map still drawn as punctuation. They are symbols now, and
+  // they answer to the same rules the creatures do.
+  const SYMBOLLED = ['door', 'doorLocked', 'sealedGate'];
+
+  check('every door and gate has a symbol',
+    SYMBOLLED.every((key) => typeof TILE_ICONS[key] === 'function'));
+  check('and every symbol belongs to a tile that exists',
+    TILE_ICON_KEYS.every((key) => Boolean(Tiles[key])));
+  check('a tile with a symbol is still a tile the renderer draws on top of ground',
+    TILE_ICON_KEYS.every((key) => Tiles[key].drawGlyph));
+
+  // The stairs keep their '>' on purpose: it is the one piece of punctuation
+  // every roguelike player already reads without being taught.
+  check('the stairs are left as they were',
+    !TILE_ICONS.stairsDown && Tiles.stairsDown.drawGlyph);
+
+  const tileMarks = Object.fromEntries(TILE_ICON_KEYS.map((key) => {
+    const p = recorder();
+    TILE_ICONS[key](p);
+    return [key, p.marks];
+  }));
+
+  check('every symbol draws something',
+    TILE_ICON_KEYS.every((k) => tileMarks[k].length > 0));
+  check('no symbol is more crowded than it can afford to be',
+    TILE_ICON_KEYS.every((k) => tileMarks[k].length <= 6));
+
+  const tileStrays = TILE_ICON_KEYS.filter((key) =>
+    tileMarks[key].some(({ name, args }) => {
+      if (name === 'poly' || name === 'line') {
+        return !args[0].every(([x, y]) => within(x) && within(y));
+      }
+      if (name === 'rect') {
+        const [x, y, w, h] = args;
+        return !(within(x) && within(y) && within(x + w) && within(y + h));
+      }
+      if (name === 'dot' || name === 'ring') {
+        const [cx, cy, r] = args;
+        return !(within(cx - r) && within(cx + r) && within(cy - r) && within(cy + r));
+      }
+      return false;
+    }));
+  check('no symbol draws outside its own cell'
+    + (tileStrays.length ? ' (' + tileStrays.join(', ') + ')' : ''),
+    tileStrays.length === 0);
+
+  // A shut door and an open one have to be told apart at a glance, and the
+  // only lever a single colour gives you is hollow against solid: the barred
+  // door is the open arch plus the beams across it.
+  check('the barred door is the open door with something added',
+    tileMarks.doorLocked.length > tileMarks.door.length);
+  check('and the gate is not built like either of them',
+    signature(tileMarks.sealedGate) !== signature(tileMarks.door)
+    && signature(tileMarks.sealedGate) !== signature(tileMarks.doorLocked));
 
   check('the revenant is drawn hollow, as the player is not', (() => {
     const hollow = (marks) => marks.every((m) => m.name === 'ring' || m.name === 'line');

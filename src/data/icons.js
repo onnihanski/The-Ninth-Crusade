@@ -108,6 +108,16 @@ export const ICONS = {
     p.dot(0.44, 0.24, 0.12);
     p.poly([[0.2, 0.38], [0.68, 0.38], [0.8, 0.96], [0.08, 0.96]]);  // shroud, still on her
   },
+  // What gets up. The halo is broken, the shroud has come off one shoulder, and
+  // she is standing a good deal straighter than a saint who has just been
+  // killed ought to. You are meant to be able to see, across the room and
+  // without reading the log, that this is not the fight you just won.
+  saintPerpetuaRisen: (p) => {
+    p.arc(0.44, 0.18, 0.2, Math.PI * 0.15, Math.PI * 1.5, 0.055);    // halo, cracked open
+    p.dot(0.44, 0.24, 0.12);
+    p.poly([[0.24, 0.38], [0.72, 0.44], [0.84, 0.96], [0.06, 0.96]]); // shroud, slipped
+    p.line([[0.72, 0.5], [0.94, 0.32]], 0.07);                       // and an arm out of it
+  },
 
   // -- The Choir -------------------------------------------------------------
   chorister: (p) => {
@@ -222,3 +232,51 @@ export const ICONS = {
 };
 
 export const ICON_KEYS = Object.keys(ICONS);
+
+// ---------------------------------------------------------------------------
+// Terrain that is an object rather than ground.
+//
+// Doors, barred doors and sealed gates were the last things on the map still
+// drawn as punctuation, which made the three tiles a crusader actually has to
+// make a decision about look like syntax in the middle of a drawn room. Same
+// unit space, same single colour, same rule about how many marks a shape can
+// afford: these are read at a glance or not at all.
+//
+// The three of them are deliberately a family, and a single colour gives you
+// exactly one lever to tell them apart with: hollow against solid. A door is an
+// arch you can see the room through; the barred door is that arch with beams
+// across it; the gate is a grating, and looks like nothing else on the map.
+// ---------------------------------------------------------------------------
+
+// A pointed arch, traced from one foot up over the crown and down to the other.
+// Left open at the floor, because that is the part you walk through.
+const ARCH = [[0.25, 0.96], [0.25, 0.46], [0.5, 0.17], [0.75, 0.46], [0.75, 0.96]];
+
+export const TILE_ICONS = {
+  // Hollow: you can see the room through it, and you can walk through it.
+  door: (p) => p.line(ARCH, 0.1),
+
+  // The same arch, barred. Two beams rather than one: a single beam across a
+  // pointed arch is the letter A, which is precisely the thing this game took
+  // off the map in the first place. Two is a barred door and reads as nothing
+  // else.
+  doorLocked: (p) => {
+    p.line(ARCH, 0.1);
+    p.rect(0.2, 0.52, 0.6, 0.11);
+    p.rect(0.2, 0.74, 0.6, 0.11);
+  },
+
+  // Not an arch at all. A portcullis is a grating, and a grating is the one
+  // shape that survives being sixteen pixels wide: two rails, three bars, and
+  // the seal set where they cross.
+  sealedGate: (p) => {
+    p.line([[0.12, 0.28], [0.88, 0.28]], 0.09);
+    p.line([[0.12, 0.74], [0.88, 0.74]], 0.09);
+    p.line([[0.3, 0.12], [0.3, 0.9]], 0.08);
+    p.line([[0.5, 0.12], [0.5, 0.9]], 0.08);
+    p.line([[0.7, 0.12], [0.7, 0.9]], 0.08);
+    p.dot(0.5, 0.51, 0.14);
+  },
+};
+
+export const TILE_ICON_KEYS = Object.keys(TILE_ICONS);
