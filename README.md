@@ -250,28 +250,54 @@ Levelling and gear feed the same stats, so the numbers cannot be tuned by eye.
 `tools/balance.mjs` auto-plays the game and reports where runs end:
 
 ```
-node tools/balance.mjs 250
+node tools/balance.mjs 300
 ```
 
 It runs two policies — `clear` (fights the floor, takes the loot, then descends)
 and `dive` (fights what is in the way and little else) — and takes
 `BALANCE_DISABLE=reach,attune` to strip named mechanics from the item data, so
-any one of them can be measured rather than guessed at. As of the current
-numbers, a thorough crusader wins about **20%** of the time, reaches a median
-depth of 9 at a median level of 9, and dies on every floor of the dungeon. The
-harness plays melee only and never picks up a bow, so it is a floor on the real
-number, not the number. A hurried one dies at the first boss, every time, which
-is the intended lesson.
+any one of them can be measured rather than guessed at.
 
-A full sweep is slow — it plays every run to the end, so 300 runs across both
-policies is tens of minutes with no output until it finishes. Use a smaller
-count while iterating and save the full number for the change you mean to keep.
+At 300 runs a piece, on the current numbers:
+
+| | clear | dive |
+|---|---|---|
+| won | **14.7%** (44/300) | **0%** (0/300) |
+| depth | median 8, max 12 | median 3, max 9 |
+| level | median 9, max 17 | median 1, max 6 |
+| turns per floor | median 570 | median 108 |
+
+A thorough crusader wins about one run in seven and dies on every floor of the
+dungeon. The harness plays melee only and never picks up a bow, so that is a
+floor on the real number, not the number. A hurried one dies at the first boss —
+depth 3 is the median ending for `dive`, and it has never once reached the
+bottom — which is the intended lesson.
+
+Runs are independent and seeded from their index, so the sweep shards across
+cores: 300 runs of both policies is a little over four minutes on four cores,
+and it draws a progress bar while it works. `BALANCE_WORKERS=1` forces the old
+single-threaded path, which is what you want under a profiler.
 
 Re-run it after touching any number in `data/` or `progress.js`. It has caught
 five things that reading the code did not: fourteen monsters on depth 1, a
 defense stat that outran every monster in the game, a softlock where a full
 pack made a boss floor impossible to leave, the difficulty spiral below, and an
 archer that could never be caught.
+
+### The `stuck` ending is a real bug, not a bot that gave up
+
+About one run in ten ends `stuck` — 30/300 for `clear`, 24/300 for `dive`. It is
+always the same shape: a **boss floor**, gate still sealed, and every monster,
+every relic and the gate itself unreachable from where the crusader is standing.
+The floor generates connected (a connectivity probe over 400 seeds x 12 depths
+finds no isolated start), so something during play cuts the crusader off from
+the rest of the level.
+
+That is a softlock a human would hit too, and it is dragging the measured win
+rate down by an unknown amount. `BALANCE_DEBUG=1` prints the seed, depth, door
+state and position of every stuck run, single-threaded, so a case can be
+replayed: `BALANCE_DEBUG=1 node tools/balance.mjs 12`. Known reproducing seeds:
+47527 and 79203, both `clear`, both depth 9.
 
 ### What the special mechanics were worth
 
