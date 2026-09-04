@@ -39,7 +39,12 @@ const bundle = order(entry)
       .replace(IMPORT_LINE, '')
       .replace(/^export\s+(?=(const|let|function|class)\b)/gm, '')
       .trim();
-    return '// ==== ' + relative(root, path) + ' ' + '='.repeat(Math.max(0, 60 - path.length)) + '\n' + body;
+    // Pad from the repo-relative name, never the absolute path: padding off
+    // `path` makes the banner depend on where the checkout lives, so a rebuild
+    // on another machine rewrites every banner in dist/ without a line of the
+    // game having changed.
+    const name = relative(root, path);
+    return '// ==== ' + name + ' ' + '='.repeat(Math.max(0, 60 - name.length)) + '\n' + body;
   })
   .join('\n\n');
 

@@ -48,6 +48,12 @@ Tests are headless and dependency-free:
 node tests/smoke.mjs
 ```
 
+There is a `package.json`, but only to say `"type": "module"` and to name the
+three commands — there are no dependencies and nothing to install. `npm run
+build`, `npm test` and `npm run balance` are the same three lines above. The
+file is load-bearing all the same: without it Node treats every `.js` under
+`src/` as CommonJS, and both the build and the tests fail to import anything.
+
 ## Playing
 
 | Action      | Keys                          |
@@ -252,9 +258,14 @@ and `dive` (fights what is in the way and little else) — and takes
 `BALANCE_DISABLE=reach,attune` to strip named mechanics from the item data, so
 any one of them can be measured rather than guessed at. As of the current
 numbers, a thorough crusader wins about **20%** of the time, reaches a median
-depth of 9 at a median level of 9, and dies on every floor of the dungeon. The harness plays melee only and never
-picks up a bow, so it is a floor on the real number, not the number. A hurried one dies at the first boss,
-every time, which is the intended lesson.
+depth of 9 at a median level of 9, and dies on every floor of the dungeon. The
+harness plays melee only and never picks up a bow, so it is a floor on the real
+number, not the number. A hurried one dies at the first boss, every time, which
+is the intended lesson.
+
+A full sweep is slow — it plays every run to the end, so 300 runs across both
+policies is tens of minutes with no output until it finishes. Use a smaller
+count while iterating and save the full number for the change you mean to keep.
 
 Re-run it after touching any number in `data/` or `progress.js`. It has caught
 five things that reading the code did not: fourteen monsters on depth 1, a
@@ -264,11 +275,18 @@ archer that could never be caught.
 
 ### What the special mechanics were worth
 
+These numbers are a **historical reading**, taken on the dungeon as it stood
+when the eight mechanics were added — before the floor was reshaped to 56x42
+and before the traits were priced down in response to what the table showed.
+The absolute win rate has moved a long way since (see the 20% above); what is
+still worth reading is the *spacing* between the rows. Re-run the ablation
+before quoting any of these figures as current.
+
 Adding the eight special mechanics took the win rate from 28% to **80%**, which
 is the sort of thing that is invisible when you read the diff. Disabling them
 one at a time found the power was not spread evenly at all:
 
-| Removed | Win rate | Cost of the trait |
+| Removed | Win rate (at the time) | Cost of the trait |
 |---|---|---|
 | nothing | 80% | — |
 | reach | 46% | **34 points** |
@@ -449,7 +467,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    303 assertions, including a full run to depth 12
+tests/smoke.mjs    306 assertions, including a full run to depth 12
 ```
 
 ### Tone
@@ -475,8 +493,10 @@ flavour text define what the game *is*, with no changes needed anywhere in
 - **Deeper memorial** — graves you can pray at, predecessors who remember how
   you died, a revenant that fights the way you played
 - **Progression** — equipment that does something other than add numbers
-- **Bosses with mechanics** — right now they are large monsters; they should
-  each break one rule of the game
+- **More rule-breaking bosses** — the four in `bosses.js` each break one rule
+  (the Herald calls reinforcements, Perpetua rises once, Odo strikes from across
+  the room, Baudouin mirrors your build); the next ones should break the map,
+  the turn order, or the pack
 
 ## Builds
 
@@ -487,5 +507,5 @@ flavour text define what the game *is*, with no changes needed anywhere in
 - `dist/embed.html` — the same, without the document wrapper, for hosts that
   supply their own `<head>`.
 
-Both inline all 28 modules, so neither has the module-loading problem the
+Both inline all 31 modules, so neither has the module-loading problem the
 top-level page has.

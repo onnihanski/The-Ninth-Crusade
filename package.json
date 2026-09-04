@@ -1,0 +1,15 @@
+{
+  "name": "the-ninth-crusade",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A traditional roguelike in vanilla JavaScript. No dependencies, no build step required to play.",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node tests/smoke.mjs",
+    "balance": "node tools/balance.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
