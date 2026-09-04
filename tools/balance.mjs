@@ -16,6 +16,7 @@
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { Game } from '../src/game/game.js';
 import { moveOrAttack, pickUp, useItem, equipItem, descend } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
@@ -226,7 +227,7 @@ function restIfSafe(game, monsters) {
   return !near;
 }
 
-function playOne(seed, policy, memorial) {
+export function playOne(seed, policy, memorial, onStuck) {
   const game = new Game({ seed, memorial, ...mapSize });
   let floorTurns = 0;
   let ending = 'turnlimit';
@@ -278,6 +279,10 @@ function playOne(seed, policy, memorial) {
 
     if (!acted) {
       ending = 'stuck';
+      // A replay tool can ask to be handed the exact position the bot gave up
+      // in, which is the only way to look at a stuck floor rather than at a
+      // one-line summary of one.
+      if (onStuck) onStuck(game, { seed, policy, reach });
       if (process.env.BALANCE_DEBUG) {
         const tile = level.tiles.get(game.player.x, game.player.y).key;
         const reachable = (e) => reach && reach[e.y * level.width + e.x] !== UNREACHABLE;
@@ -428,7 +433,10 @@ function report(policy, results, ms) {
   console.log('');
 }
 
-if (isMainThread) {
+const isEntry = process.argv[1]
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+
+if (isMainThread && isEntry) {
   // One worker per core, but never more workers than runs, and never a second
   // thread for a sweep small enough that starting one costs more than it saves.
   // BALANCE_DEBUG writes from inside a run, so it stays single-threaded.

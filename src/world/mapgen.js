@@ -46,6 +46,10 @@ export function generateLevel(rng, width, height, options = {}) {
   const door = openArena(tiles, reserved, rooms);
   if (!door) return generateLevel(rng, width, height, options);
 
+  // Walling the ring can have severed a corridor that ran across the reserved
+  // ground. Put the floor back together before anyone has to walk it.
+  reconnectOutside(tiles, reserved, width, height);
+
   tiles.set(reserved.cx, reserved.cy, Tiles.stairsDown);
   return {
     tiles, rooms,
@@ -256,6 +260,106 @@ function openArena(tiles, arena, rooms) {
 
   void rooms;
   return { x: door[0], y: door[1] };
+}
+
+// Cardinals only: a tunnel dug on the diagonal reads as a mistake even though
+// the game would let you walk it.
+const DIRS4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+/**
+ * Rejoin whatever the ring cut off.
+ *
+ * The arena is reserved before the region generator runs, so no *room* is ever
+ * drawn on that ground -- `fits` sees to that. The corridors between rooms are
+ * not checked against it, though, and one that happened to thread across the
+ * reserved rectangle is cut in half the moment the ring is walled. The floor is
+ * then in two pieces with the arena opening onto only one of them, and a
+ * crusader who arrives on the wrong side can reach neither the gate nor the
+ * boss nor anything else: a dead run on a floor that looks perfectly ordinary.
+ *
+ * So dig the shortest way from each stranded piece back to the largest one,
+ * around the arena rather than through it. The arena and its ring are off
+ * limits to the digging, which is what keeps the fight to exactly one door.
+ */
+function reconnectOutside(tiles, arena, width, height) {
+  const offLimits = (x, y) => within(arena, x, y, 1);
+  const walkableOutside = (x, y) => !offLimits(x, y) && Boolean(tiles.get(x, y)?.walkable);
+
+  // Label the ground outside the arena, piece by piece.
+  const label = new Int32Array(width * height).fill(-1);
+  const members = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (label[y * width + x] !== -1 || !walkableOutside(x, y)) continue;
+      const id = members.length;
+      const cells = [];
+      const stack = [x, y];
+      label[y * width + x] = id;
+      while (stack.length) {
+        const cy = stack.pop();
+        const cx = stack.pop();
+        cells.push([cx, cy]);
+        for (const [dx, dy] of DIRS8) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (!tiles.inBounds(nx, ny) || label[ny * width + nx] !== -1) continue;
+          if (!walkableOutside(nx, ny)) continue;
+          label[ny * width + nx] = id;
+          stack.push(nx, ny);
+        }
+      }
+      members.push(cells);
+    }
+  }
+  if (members.length <= 1) return;
+
+  let main = 0;
+  for (let i = 1; i < members.length; i++) {
+    if (members[i].length > members[main].length) main = i;
+  }
+
+  for (let id = 0; id < members.length; id++) {
+    if (id !== main) tunnelTo(tiles, width, height, members[id], label, main, offLimits);
+  }
+}
+
+/**
+ * Dig from one stranded piece to the main one by the shortest route that stays
+ * clear of the arena. A route always exists: the arena is reserved with a
+ * margin on every side, so there is ground to go around it.
+ */
+function tunnelTo(tiles, width, height, sources, label, main, offLimits) {
+  const from = new Int32Array(width * height).fill(-2);   // -2 unvisited, -1 start
+  const queue = [];
+  for (const [x, y] of sources) {
+    from[y * width + x] = -1;
+    queue.push(x, y);
+  }
+
+  for (let head = 0; head < queue.length; head += 2) {
+    const x = queue[head];
+    const y = queue[head + 1];
+
+    if (label[y * width + x] === main) {
+      // Walk the route back, turning every wall along it into floor.
+      for (let i = y * width + x; i >= 0; i = from[i]) {
+        const cx = i % width;
+        const cy = (i - cx) / width;
+        if (tiles.get(cx, cy) === Tiles.wall) tiles.set(cx, cy, Tiles.floor);
+      }
+      return;
+    }
+
+    for (const [dx, dy] of DIRS4) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!tiles.inBounds(nx, ny) || offLimits(nx, ny)) continue;
+      const i = ny * width + nx;
+      if (from[i] !== -2) continue;
+      from[i] = y * width + x;
+      queue.push(nx, ny);
+    }
+  }
 }
 
 function ringAround(rect, tiles) {

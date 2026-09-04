@@ -262,16 +262,16 @@ At 300 runs a piece, on the current numbers:
 
 | | clear | dive |
 |---|---|---|
-| won | **14.7%** (44/300) | **0%** (0/300) |
-| depth | median 8, max 12 | median 3, max 9 |
-| level | median 9, max 17 | median 1, max 6 |
-| turns per floor | median 570 | median 108 |
+| won | **20.7%** (62/300) | **0%** (0/300) |
+| depth | median 8, max 12 | median 3, max 12 |
+| level | median 9, max 17 | median 1, max 8 |
+| turns per floor | median 620 | median 118 |
 
-A thorough crusader wins about one run in seven and dies on every floor of the
+A thorough crusader wins about one run in five and dies on every floor of the
 dungeon. The harness plays melee only and never picks up a bow, so that is a
 floor on the real number, not the number. A hurried one dies at the first boss —
-depth 3 is the median ending for `dive`, and it has never once reached the
-bottom — which is the intended lesson.
+depth 3 is the median ending for `dive`. One hurried run in three hundred has
+reached the bottom, and it died there.
 
 Runs are independent and seeded from their index, so the sweep shards across
 cores: 300 runs of both policies is a little over four minutes on four cores,
@@ -279,25 +279,40 @@ and it draws a progress bar while it works. `BALANCE_WORKERS=1` forces the old
 single-threaded path, which is what you want under a profiler.
 
 Re-run it after touching any number in `data/` or `progress.js`. It has caught
-five things that reading the code did not: fourteen monsters on depth 1, a
+six things that reading the code did not: fourteen monsters on depth 1, a
 defense stat that outran every monster in the game, a softlock where a full
-pack made a boss floor impossible to leave, the difficulty spiral below, and an
-archer that could never be caught.
+pack made a boss floor impossible to leave, the difficulty spiral below, an
+archer that could never be caught, and the split boss floor below.
 
-### The `stuck` ending is a real bug, not a bot that gave up
+`BALANCE_DEBUG=1` runs single-threaded and prints the seed, depth, door state
+and position of any run the bot cannot find a move in, so a bad floor can be
+replayed rather than guessed at.
 
-About one run in ten ends `stuck` — 30/300 for `clear`, 24/300 for `dive`. It is
-always the same shape: a **boss floor**, gate still sealed, and every monster,
-every relic and the gate itself unreachable from where the crusader is standing.
-The floor generates connected (a connectivity probe over 400 seeds x 12 depths
-finds no isolated start), so something during play cuts the crusader off from
-the rest of the level.
+### The floor that came apart
 
-That is a softlock a human would hit too, and it is dragging the measured win
-rate down by an unknown amount. `BALANCE_DEBUG=1` prints the seed, depth, door
-state and position of every stuck run, single-threaded, so a case can be
-replayed: `BALANCE_DEBUG=1 node tools/balance.mjs 12`. Known reproducing seeds:
-47527 and 79203, both `clear`, both depth 9.
+One run in ten used to end `stuck` — 30/300 for `clear`, 24/300 for `dive` —
+and every one was the same shape: a **boss floor**, gate still sealed, and every
+monster, every relic and the gate itself unreachable from where the crusader was
+standing. A dead run on a floor that looked perfectly ordinary.
+
+The arena is reserved before the region generator draws anything, and `fits()`
+keeps every *room* off that ground. Corridors were never checked against it.
+A corridor running between two rooms on opposite sides of the reserved
+rectangle was carved straight across it, and then `openArena` walled the ring to
+leave its single door — cutting that corridor in half and leaving the floor in
+two pieces, with the arena opening onto only one of them. Arrive on the wrong
+side and there was nothing you could reach and nothing you could do.
+
+It was as common as the silhouette allowed: 18.7% of Siege Yards boss floors,
+12.3% of the Choir's, 3.0% of the Reliquary's, and none at all in the Empty
+Tomb, which is the one generator that already blocked the reserved ground out
+of its cave fill.
+
+`reconnectOutside` now labels the ground outside the arena, and digs the
+shortest way from each stranded piece back to the largest one — around the
+arena, never into it, so the fight still has exactly one door. Fixing it took
+`stuck` to zero and the `clear` win rate from 14.7% to **20.7%**: six runs in
+every hundred were being thrown away by a floor that could not be walked.
 
 ### What the special mechanics were worth
 
@@ -493,7 +508,7 @@ src/
     names.js       crusader name generation
 tools/build.mjs    inlines everything into one dist/index.html
 tools/balance.mjs  auto-plays hundreds of runs and reports where they end
-tests/smoke.mjs    306 assertions, including a full run to depth 12
+tests/smoke.mjs    308 assertions, including a full run to depth 12
 ```
 
 ### Tone

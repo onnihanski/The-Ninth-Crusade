@@ -1649,6 +1649,44 @@ section('boss arenas');
     return true;
   })());
 
+  // The floor a boss sits on has to hold together like any other. It did not:
+  // rooms are kept off the reserved arena ground but the corridors between them
+  // were not, so a corridor that ran across it was cut in two when the ring was
+  // walled -- leaving a floor in two halves with the arena opening onto only
+  // one. A crusader arriving on the wrong side could reach nothing at all.
+  check('every boss floor is still one connected floor', (() => {
+    for (const region of REGIONS) {
+      for (let seed = 0; seed < 40; seed++) {
+        const level = generateLevel(new RNG(seed * 23 + 11), MAP_WIDTH, MAP_HEIGHT,
+          { region, bossFloor: true });
+        const dist = dijkstraMap(MAP_WIDTH, MAP_HEIGHT, [[level.door.x, level.door.y]],
+          (x, y) => level.tiles.get(x, y).walkable);
+        for (let y = 0; y < MAP_HEIGHT; y++) {
+          for (let x = 0; x < MAP_WIDTH; x++) {
+            if (!level.tiles.get(x, y).walkable) continue;
+            if (dist[y * MAP_WIDTH + x] >= UNREACHABLE) return false;
+          }
+        }
+      }
+    }
+    return true;
+  })());
+
+  // The repair digs around the arena, never into it, so the fight still has
+  // exactly one way in on the floors that needed repairing.
+  check('repairing a split floor does not open a second door', (() => {
+    for (const region of REGIONS) {
+      for (let seed = 0; seed < 40; seed++) {
+        const level = generateLevel(new RNG(seed * 23 + 11), MAP_WIDTH, MAP_HEIGHT,
+          { region, bossFloor: true });
+        const ways = ringOf(level.bossRoom)
+          .filter(([x, y]) => level.tiles.get(x, y)?.walkable).length;
+        if (ways !== 1) return false;
+      }
+    }
+    return true;
+  })());
+
   const g = invincible(new Game({ seed: 5100, memorial: new Memorial(memoryStorage()) }));
   g.buildLevel(3);
   const boss = g.level.entities.find((e) => e.boss);
