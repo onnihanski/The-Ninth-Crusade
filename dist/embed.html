@@ -1922,6 +1922,40 @@ function effectiveDefense(entity) {
 }
 
 /**
+ * Stats that answer the crusader's own, capped and lagged.
+ *
+ * The balance harness found the dungeon's back half inverted: depths 9, 10 and
+ * 11 killed 5-6% of the crusaders who reached them while depth 8 killed 23%.
+ * Monster stats climb linearly; a crusader's climb multiplicatively, because
+ * levels and gear feed the same numbers. By the Empty Tomb the player has
+ * simply overtaken the roster.
+ *
+ * Baudouin was the only late fight that worked, and this is why: he is the one
+ * enemy whose power is a function of yours. This is that rule, lifted out of
+ * his implementation so the dead can borrow it too.
+ *
+ * `lag` keeps the mirror a step behind the crusader -- close enough to be
+ * frightening, never a wall -- and the caps stop a good run from making the
+ * game unwinnable at exactly the moment it has been earned.
+ */
+function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMultiple }) {
+  const basePower = entity.power;
+  const baseDefense = entity.defense;
+  const baseHp = entity.maxHp;
+
+  entity.power = clampTo(effectivePower(player) - lag, basePower, basePower + powerCap);
+  entity.defense = clampTo(effectiveDefense(player) - lag, baseDefense, baseDefense + defenseCap);
+  entity.maxHp = clampTo(player.maxHp, baseHp, baseHp * hpMultiple);
+  entity.hp = entity.maxHp;
+  entity.mirrored = true;
+  return entity;
+}
+
+function clampTo(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+/**
  * Heavy gear costs turns, which is the whole trade. Floored well above zero:
  * an actor that never banks energy would spin the scheduler forever waiting
  * for a turn that cannot arrive.
@@ -2543,6 +2577,40 @@ const REVEAL = {
 // fiction, exactly what the thing is about to do to you -- the mechanic is
 // never a surprise, only the fight is.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE COMPANY THAT WENT DOWN WITH HIM
+//
+// A first run has an empty memorial, so the Empty Tomb has none of your own
+// dead to field -- and the Empty Tomb is precisely where the balance harness
+// found the game had stopped being dangerous. These are who is down there when
+// you have not yet left anyone: the crusaders who followed Sir Baudouin, still
+// on the floor they reached.
+//
+// They are named rather than anonymous because a nameless revenant is the one
+// thing the memorial is not for. Once you have your own dead this deep, they
+// take these places -- the tomb prefers your predecessors to his.
+//
+// Tone: the record admires them, and does not say what happened. Same rule as
+// the gate chapters -- nothing here may hint at the reveal.
+// ---------------------------------------------------------------------------
+const THE_COMPANY = [
+  {
+    name: 'Sister Aveline the Second Banner',
+    depth: 10,
+    note: 'She carried the second banner and would not put it down.',
+  },
+  {
+    name: 'Brother Gervais of the Long Watch',
+    depth: 11,
+    note: 'He counted the days aloud so the others would not have to.',
+  },
+  {
+    name: 'Knight Hedwige the Unanswered',
+    depth: 12,
+    note: 'She asked, at each gate, whether they were still going down.',
+  },
+];
+
 const BOSS_LORE = {
   herald: {
     title: 'the Herald of the Third Wall',
@@ -2628,15 +2696,12 @@ function prepareBoss(game, boss) {
 
   // Never weaker than the crusader who found him, never a wall either: he is
   // one step behind your build, which is close enough to be frightening.
-  const basePower = boss.power;
-  const baseDefense = boss.defense;
-  const baseHp = boss.maxHp;
-
-  boss.power = clamp(effectivePower(player) - MIRROR_LAG, basePower, basePower + MIRROR_POWER_CAP);
-  boss.defense = clamp(effectiveDefense(player) - MIRROR_LAG, baseDefense, baseDefense + MIRROR_DEFENSE_CAP);
-  boss.maxHp = clamp(player.maxHp, baseHp, baseHp * MIRROR_HP_MULTIPLE);
-  boss.hp = boss.maxHp;
-  boss.mirrored = true;
+  mirrorToPlayer(boss, player, {
+    lag: MIRROR_LAG,
+    powerCap: MIRROR_POWER_CAP,
+    defenseCap: MIRROR_DEFENSE_CAP,
+    hpMultiple: MIRROR_HP_MULTIPLE,
+  });
 }
 
 /**
@@ -2699,9 +2764,6 @@ function bossRises(game, boss) {
   return true;
 }
 
-function clamp(value, low, high) {
-  return Math.max(low, Math.min(high, value));
-}
 
 function openSpotNear(game, boss) {
   const offsets = game.rng.shuffle([
@@ -3030,15 +3092,32 @@ function takeShooterTurn(game, monster, profile, canSeePlayer) {
   const player = game.player;
   const distance = chebyshev(monster.x, monster.y, player.x, player.y);
 
+  // An archer holds its ground; a boss does not. Odo's voice has no range, so
+  // `distance <= profile.range` is true from anywhere in the arena and he never
+  // reached the approach below -- he stood on his spot for the whole fight and
+  // backed away when reached. The balance harness read the result plainly: the
+  // floors leading to him killed 17.6% and 23.0% of the crusaders who arrived,
+  // and Odo himself killed 5.3%. He was the safest room in his own region.
+  //
+  // A boss now closes while it reloads and never gives ground. The rule stays
+  // exactly as it was for everything else, because holding still to crank is
+  // what makes an ordinary shooter beatable at all.
+  const holdsGround = !monster.boss;
+
   if (distance <= 1) {
-    if (game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
+    if (holdsGround && game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
     attack(game, monster, player);
     return;
   }
 
   if (canSeePlayer && distance <= profile.range) {
-    if (canFire(monster)) shoot(game, monster, player, profile);
-    return;                                    // loaded or not, hold this spot
+    if (canFire(monster)) {
+      shoot(game, monster, player, profile);
+      return;
+    }
+    if (holdsGround) return;                   // an archer cranks where it stands
+    approach(game, monster);                   // he sings, and he walks
+    return;
   }
 
   approach(game, monster);
@@ -3224,6 +3303,10 @@ const REGIONS = [
     monsters: ['graveWraith', 'pilgrimHusk', 'sepulchreWorm', 'mourner'],
     boss: 'baudouin',
     final: true,
+    // The dead here fight the way you fight. Baudouin is the only late enemy
+    // that ever worked, and this is the reason -- his power is a function of
+    // yours. His region now shares it: see mirrorToPlayer in game/status.js.
+    remembers: true,
     palette: { wall: '#3f3a44', floor: '#5c5563' },
   },
 ];
@@ -3379,6 +3462,14 @@ const MAP_HEIGHT = 42;
 // regeneration makes health free: clear a floor, rest to full, repeat. This is
 // what puts a price on standing still, and it is why resting is a decision
 // rather than a formality.
+// The dead of the Empty Tomb answer the crusader's build, on Baudouin's rule
+// but at a fraction of his reach. He lags your power by 5 and may exceed his
+// own base by 4; they lag by 7 and may exceed theirs by 2. `hpMultiple: 1`
+// leaves their health exactly as the memorial recorded it -- they learn to hit
+// the way you hit, and still die on the schedule they always did. The ending
+// stays the hardest thing in the dungeon.
+const REVENANT_MIRROR = { lag: 7, powerCap: 2, defenseCap: 1, hpMultiple: 1 };
+
 const WANDER_EVERY = 45;
 const WANDER_MIN_DISTANCE = 12;
 
@@ -3524,14 +3615,32 @@ class Game {
    * holding what they were holding.
    */
   summonTheRemembered(depth) {
-    const dead = this.memorial.atDepth(depth);
+    const region = regionForDepth(depth);
+    const yours = this.memorial.atDepth(depth);
+
+    // A first run has left nobody this deep, and the Empty Tomb is exactly
+    // where the harness found the dungeon had stopped being dangerous. When
+    // you have none of your own dead here, his company stands in for them --
+    // so the mechanic is not something a player only meets on their sixth run.
+    const dead = (yours.length || !region?.remembers)
+      ? yours
+      : THE_COMPANY.filter((c) => c.depth === depth);
     if (!dead.length) return;
 
     const rooms = this.level.rooms.slice(1);
     for (const entry of dead) {
       const room = this.rng.pick(rooms.length ? rooms : this.level.rooms);
       const spot = this.freeSpotInRoom(room);
-      if (spot) this.level.add(makeRevenant(entry, spot.x, spot.y));
+      if (!spot) continue;
+      const risen = makeRevenant(entry, spot.x, spot.y);
+      // The dead of this region fight the way you fight. Gentler than Baudouin
+      // on every axis -- he is the ending, and they are what the floor is made
+      // of -- but scaled from the same crusader, so the bottom of the dungeon
+      // can no longer be walked through by a run that has outgrown its roster.
+      if (region?.remembers) {
+        mirrorToPlayer(risen, this.player, REVENANT_MIRROR);
+      }
+      this.level.add(risen);
     }
     this.log(
       dead.length === 1
