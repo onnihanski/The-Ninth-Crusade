@@ -69,6 +69,11 @@ const seedFor = (i) => (i + SEED_BLOCK * RUNS) * 7919 + 13;
 // one policy and its runs are sequential, so there is nothing to race with.
 let policyInPlay = 'clear';
 
+// Whether the crusader is shut in with a boss. Gear is scored differently in
+// there, so this is read once a turn rather than passed through score(),
+// wants() and upgrade() individually.
+let cornered = false;
+
 // What a shot is worth relative to a swing, for the `shoot` policy's gear
 // choice only. A bow's damage per turn (power over reload) is close to a
 // sword's, and on that alone the bot would never pick one up -- every ranged
@@ -92,6 +97,15 @@ function score(player, equipment) {
 
   const ranged = worn.map((i) => i.item.equip.ranged).find(Boolean);
   if (!ranged) return melee;
+
+  // Inside a barred arena a bow is worth nothing beyond its own poor melee.
+  // One door, no blinking out, and nothing to kite around: the first shot
+  // lands and then the fight is a knife fight. The first version of this
+  // policy scored the bow the same everywhere and walked into every boss room
+  // holding it, which is why it died at 33% to the Herald against melee's
+  // 4.5% -- a caricature of ranged play rather than a measurement of it.
+  if (cornered) return melee;
+
   // Damage per turn alone ranks the sling and the crossbow exactly equal
   // (4 over 2 reload turns against 6 over 3), so the bot picked up a sling on
   // depth 1 and carried it to the bottom -- which would have measured one
@@ -99,6 +113,34 @@ function score(player, equipment) {
   // a bow buys: it is how many shots land before anything arrives.
   const shots = (ranged.power / (ranged.reload + 1)) * (ranged.range / 4);
   return melee + shots * SHOT_WEIGHT;
+}
+
+/** Melee value alone, for ranking a sidearm against other sidearms. */
+function swingValue(player, entity) {
+  const e = entity.item.equip;
+  const speed = Math.max(25, player.speed + (e.speed ?? 0));
+  return (player.power + (e.power ?? 0)) * (speed / 100);
+}
+
+/** Ranged value alone, on the same footing score() uses. */
+function shotValue(entity) {
+  const r = entity.item.equip.ranged;
+  return r ? (r.power / (r.reload + 1)) * (r.range / 4) : 0;
+}
+
+/**
+ * Is this weapon better than the best of its own kind the crusader already
+ * has, equipped or packed? Bows are ranked against bows and swords against
+ * swords, so the shoot policy ends up carrying one good one of each.
+ */
+function beatsHeldWeapon(player, entity) {
+  const wantsRanged = Boolean(entity.item.equip.ranged);
+  const held = [player.equipment?.weapon, ...player.inventory]
+    .filter(Boolean)
+    .filter((i) => i.item.equip?.slot === 'weapon')
+    .filter((i) => Boolean(i.item.equip.ranged) === wantsRanged);
+  const value = (i) => (wantsRanged ? shotValue(i) : swingValue(player, i));
+  return held.every((i) => value(entity) > value(i) + 0.01);
 }
 
 /**
@@ -142,6 +184,14 @@ function wants(game, entity) {
 
   if (item.equip) {
     const slot = item.equip.slot;
+    // A crusader who means to shoot still needs something to swing when the
+    // arena door bars behind them. Weapons are judged against the best of
+    // their own kind already held -- a sword never beats a bow on the open
+    // floor, so judging it against the equipped bow meant never stooping for
+    // one, and there was nothing to swap to.
+    if (policyInPlay === 'shoot' && slot === 'weapon') {
+      return beatsHeldWeapon(p, entity);
+    }
     return score(p, { ...p.equipment, [slot]: entity }) > score(p, p.equipment) + 0.01;
   }
 
@@ -281,6 +331,10 @@ export function playOne(seed, policy, memorial, onStuck) {
     const level = game.level;
     const passable = (x, y) => level.isWalkable(x, y);
     const thorough = policy === 'clear' || policy === 'shoot';
+    // Shut in with a boss: read before upgrade(), which is what performs the
+    // swap to the sidearm and back out again on the way to the next floor.
+    cornered = policy === 'shoot' && level.arenaHolds()
+      && level.inArena(game.player.x, game.player.y);
 
     const monsters = level.entities.filter((e) => e.ai && e.alive);
     const loot = level.entities.filter((e) => e.item && wants(game, e));
