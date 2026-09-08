@@ -1,0 +1,66 @@
+# Publishes the game to GitHub Pages -- the free static host that comes with
+# every repository. The site is built the same way a person builds it locally
+# (node tools/build.mjs), so what goes online is the single-file dist/ build
+# and nothing else: no source tree, no tests, no tooling.
+#
+# Before the first run, set Settings -> Pages -> Source to "GitHub Actions".
+# Without that the deploy step has nowhere to publish to and fails.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. A newer push waits for the running one to finish rather
+# than cancelling it, so a half-uploaded site is never left live.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Only the default branch is published, whatever it happens to be called.
+  # Checked here rather than with `branches:` above so that renaming the
+  # default branch does not silently stop the deploys.
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No dependencies to install -- there are none. Straight to the checks.
+      - name: Test
+        run: node tests/smoke.mjs
+
+      - name: Build
+        run: node tools/build.mjs
+
+      # The build is deterministic, so a dist/ that differs from the one in the
+      # repository means someone edited src/ without rebuilding. Say so here
+      # rather than letting the committed file and the live site drift apart.
+      - name: Check dist/ is up to date
+        run: git diff --exit-code -- dist/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

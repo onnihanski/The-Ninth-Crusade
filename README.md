@@ -608,3 +608,27 @@ flavour text define what the game *is*, with no changes needed anywhere in
 
 Both inline all 31 modules, so neither has the module-loading problem the
 top-level page has.
+
+## Putting it online
+
+The game is static files, so GitHub Pages hosts it for nothing — no account
+beyond the one holding this repository, no card, no server to keep alive.
+`.github/workflows/pages.yml` does the work: on every push to the default
+branch it runs the tests, rebuilds `dist/`, checks that the committed `dist/`
+matches what it just built, and publishes that folder.
+
+The one thing a workflow cannot do for itself is turn Pages on:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. Push, or run the workflow by hand from the **Actions** tab.
+3. The site appears at `https://<user>.github.io/<repo>/`, and the run's
+   summary links to it.
+
+Only `dist/` is published, so the site root *is* the single-file build — the
+module-loading top-level page never reaches the web, and neither does `src/`,
+`tests/` or `tools/`. Anyone who wants those reads them here.
+
+Because the build is deterministic, the "dist/ is up to date" step is a real
+check and not a formality: if it fails, someone changed `src/` and forgot
+`node tools/build.mjs`, and the live site would otherwise have quietly stayed
+one commit behind the source.
