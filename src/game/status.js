@@ -141,8 +141,23 @@ export function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMu
   const baseDefense = entity.defense;
   const baseHp = entity.maxHp;
 
-  entity.power = clampTo(effectivePower(player) - lag, basePower, basePower + powerCap);
-  entity.defense = clampTo(effectiveDefense(player) - lag, baseDefense, baseDefense + defenseCap);
+  // The target is what the mirror should *end up* hitting for, not the number
+  // written on it. Baudouin is handed the crusader's own weapon, and setting
+  // the raw stat left the weapon's power on top of it: against a crusader of
+  // power 14 he came out at 16 -- ahead of them, while the comment above
+  // promised one step behind. Whatever the mirror is holding is subtracted
+  // here so the promise is the thing that is true.
+  //
+  // Nothing is taken off the weapon itself. He keeps its trait, because
+  // fighting the way you fight is the whole of what he is; he simply no longer
+  // gets the damage twice.
+  const targetPower = clampTo(effectivePower(player) - lag, basePower, basePower + powerCap);
+  const targetDefense = clampTo(effectiveDefense(player) - lag, baseDefense, baseDefense + defenseCap);
+
+  // Floored at 1: a mirror carrying gear worth more than its whole target
+  // would otherwise be written down as having negative strength of its own.
+  entity.power = Math.max(1, targetPower - gearBonus(entity, 'power'));
+  entity.defense = Math.max(0, targetDefense - gearBonus(entity, 'defense'));
   entity.maxHp = clampTo(player.maxHp, baseHp, baseHp * hpMultiple);
   entity.hp = entity.maxHp;
   entity.mirrored = true;

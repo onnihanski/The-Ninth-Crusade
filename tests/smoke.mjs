@@ -1472,17 +1472,27 @@ section('boss mechanics');
     g.buildLevel(12);
     const boss = g.level.entities.find((e) => e.boss);
     check('Baudouin mirrors', boss.bossTrait === 'mirrors' && boss.mirrored === true);
-    check('he answers your power', boss.power > MONSTERS.baudouin.power);
-    check('he answers your defense', boss.defense > MONSTERS.baudouin.defense);
+    // Asserted on what he fights with, not on the number written on him. The
+    // raw stat is bookkeeping now: he is handed the crusader's weapon, and the
+    // mirror subtracts what it is worth so the total lands where intended.
+    check('he answers your power', effectivePower(boss) > MONSTERS.baudouin.power);
+    check('he answers your defense', effectiveDefense(boss) > MONSTERS.baudouin.defense);
     check('he picks up your weapon', boss.equipment?.weapon?.item.key === 'martyrsGreatsword');
     check('and therefore your trait', hasTrait(boss, 'cleave'));
+
+    // The promise prepareBoss makes in its own comment: one step behind the
+    // crusader who found him. He used to come out ahead, because the weapon he
+    // was handed was never counted against the clamp.
+    check('and is still a step behind the crusader',
+      effectivePower(boss) < effectivePower(g.player));
 
     // Not invincible(): that helper sets power 500, which would make the
     // "modest" crusader the strongest thing in the test.
     const weak = new Game({ seed: 3201, memorial: new Memorial(memoryStorage()) });
     weak.buildLevel(12);
     const mild = weak.level.entities.find((e) => e.boss);
-    check('a modest crusader meets a modest Baudouin', mild.power < boss.power);
+    check('a modest crusader meets a modest Baudouin',
+      effectivePower(mild) < effectivePower(boss));
   }
 }
 
