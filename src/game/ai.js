@@ -58,15 +58,32 @@ function takeShooterTurn(game, monster, profile, canSeePlayer) {
   const player = game.player;
   const distance = chebyshev(monster.x, monster.y, player.x, player.y);
 
+  // An archer holds its ground; a boss does not. Odo's voice has no range, so
+  // `distance <= profile.range` is true from anywhere in the arena and he never
+  // reached the approach below -- he stood on his spot for the whole fight and
+  // backed away when reached. The balance harness read the result plainly: the
+  // floors leading to him killed 17.6% and 23.0% of the crusaders who arrived,
+  // and Odo himself killed 5.3%. He was the safest room in his own region.
+  //
+  // A boss now closes while it reloads and never gives ground. The rule stays
+  // exactly as it was for everything else, because holding still to crank is
+  // what makes an ordinary shooter beatable at all.
+  const holdsGround = !monster.boss;
+
   if (distance <= 1) {
-    if (game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
+    if (holdsGround && game.rng.chance(SKIP_BACK_CHANCE) && retreat(game, monster)) return;
     attack(game, monster, player);
     return;
   }
 
   if (canSeePlayer && distance <= profile.range) {
-    if (canFire(monster)) shoot(game, monster, player, profile);
-    return;                                    // loaded or not, hold this spot
+    if (canFire(monster)) {
+      shoot(game, monster, player, profile);
+      return;
+    }
+    if (holdsGround) return;                   // an archer cranks where it stands
+    approach(game, monster);                   // he sings, and he walks
+    return;
   }
 
   approach(game, monster);
