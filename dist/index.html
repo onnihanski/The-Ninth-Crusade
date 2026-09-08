@@ -2128,9 +2128,22 @@ const MONSTERS = {
     name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
     weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100, xp: 14,
   },
+  // The one thing in this region that can both catch you and hurt you.
+  //
+  // At power 4 it could do neither: the Reliquary's fast monster was harmless
+  // and its dangerous one (the warden, speed 80) is slower than a crusader, so
+  // there was nothing here that could not simply be walked away from. Depths 4
+  // and 5 killed 2.3% and 1.2% of the crusaders who reached them, against
+  // 17.6% and 23.0% one region below -- and the difference was not the numbers,
+  // which climb smoothly, but this: the Choir's winged thing is the first
+  // creature in the game carrying speed and power at once, and it arrives all
+  // at once.
+  //
+  // 7 hit points keeps it a thing you deal with rather than a wall. It is the
+  // archetype, introduced one region early and made of paper.
   reliquaryMoth: {
     name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
-    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170, xp: 12,
+    weight: 9, maxHp: 7, power: 6, defense: 0, speed: 170, xp: 18,
   },
   ossuaryWarden: {
     name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
