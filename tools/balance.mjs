@@ -6,6 +6,7 @@
 //
 //   clear  a thorough player: fights the floor, takes the loot, then descends
 //   dive   a hurried player: fights what is in the way and little else
+//   shoot  a thorough player who would rather not be reached: takes the bow
 //
 // Usage: node tools/balance.mjs [runs]
 //
@@ -18,9 +19,9 @@ import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { Game } from '../src/game/game.js';
-import { moveOrAttack, pickUp, useItem, equipItem, descend } from '../src/game/actions.js';
+import { moveOrAttack, pickUp, useItem, equipItem, descend, fire } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
-import { effectiveSpeed } from '../src/game/status.js';
+import { effectiveSpeed, rangedProfile, canFire } from '../src/game/status.js';
 import { chebyshev, DIRS8 } from '../src/engine/grid.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { MAX_DEPTH } from '../src/data/regions.js';
@@ -63,13 +64,53 @@ const mapSize = (() => {
 /** The seed for run `i`. Kept in one place: the shards have to agree on it. */
 const seedFor = (i) => (i + SEED_BLOCK * RUNS) * 7919 + 13;
 
+// Which policy is being played. Set once per run rather than threaded through
+// score() and wants(), which are called from half a dozen places: a shard plays
+// one policy and its runs are sequential, so there is nothing to race with.
+let policyInPlay = 'clear';
+
+// What a shot is worth relative to a swing, for the `shoot` policy's gear
+// choice only. A bow's damage per turn (power over reload) is close to a
+// sword's, and on that alone the bot would never pick one up -- every ranged
+// weapon has melee power 1 or 2, so it always scored worse and the harness had
+// never fired a shot in its life. What the raw figure misses is that the shots
+// land while nothing is hitting back.
+//
+// This is a knob on the simulated player, not a number about the game. It only
+// has to be large enough to make the bot commit to the bow so the ranged path
+// gets exercised at all.
+const SHOT_WEIGHT = 3;
+
 /** Rough combat value: damage per turn, plus survivability. */
 function score(player, equipment) {
   const worn = Object.values(equipment).filter(Boolean);
   const bonus = (field) => worn.reduce((sum, i) => sum + (i.item.equip[field] ?? 0), 0);
   const speed = Math.max(25, player.speed + bonus('speed'));
-  return (player.power + bonus('power')) * (speed / 100)
+  const melee = (player.power + bonus('power')) * (speed / 100)
     + (player.defense + bonus('defense')) * 1.5;
+  if (policyInPlay !== 'shoot') return melee;
+
+  const ranged = worn.map((i) => i.item.equip.ranged).find(Boolean);
+  if (!ranged) return melee;
+  // Damage per turn alone ranks the sling and the crossbow exactly equal
+  // (4 over 2 reload turns against 6 over 3), so the bot picked up a sling on
+  // depth 1 and carried it to the bottom -- which would have measured one
+  // common weapon rather than the ranged game. Range is the other half of what
+  // a bow buys: it is how many shots land before anything arrives.
+  const shots = (ranged.power / (ranged.reload + 1)) * (ranged.range / 4);
+  return melee + shots * SHOT_WEIGHT;
+}
+
+/**
+ * Shoot rather than walk, whenever there is something to shoot at. `fire`
+ * refuses cleanly when the weapon is empty or the range is wrong, so this can
+ * simply ask; a false answer falls through to the policy's ordinary movement
+ * and the bot closes as before.
+ */
+function tryShoot(game) {
+  const profile = rangedProfile(game.player);
+  if (!profile || !canFire(game.player)) return false;
+  return fire(game, game.player);
 }
 
 /** Equip anything in the pack that beats what is in its slot. */
@@ -228,6 +269,7 @@ function restIfSafe(game, monsters) {
 }
 
 export function playOne(seed, policy, memorial, onStuck) {
+  policyInPlay = policy;
   const game = new Game({ seed, memorial, ...mapSize });
   let floorTurns = 0;
   let ending = 'turnlimit';
@@ -238,6 +280,7 @@ export function playOne(seed, policy, memorial, onStuck) {
 
     const level = game.level;
     const passable = (x, y) => level.isWalkable(x, y);
+    const thorough = policy === 'clear' || policy === 'shoot';
 
     const monsters = level.entities.filter((e) => e.ai && e.alive);
     const loot = level.entities.filter((e) => e.item && wants(game, e));
@@ -259,9 +302,11 @@ export function playOne(seed, policy, memorial, onStuck) {
       acted = true;                          // waiting is an action
     } else if (here.length) {
       acted = pickUp(game, game.player) || true;   // never stall on a full pack
-    } else if (policy === 'clear' && foe) {
+    } else if (policy === 'shoot' && foe && tryShoot(game)) {
+      acted = true;
+    } else if (thorough && foe) {
       acted = stepToward(game, foe.x, foe.y, passable);
-    } else if (policy === 'clear' && prize) {
+    } else if (thorough && prize) {
       acted = stepToward(game, prize.x, prize.y, passable);
     } else if (level.sealed || level.doorLocked) {
       // Sealed floor: the boss and its seal are the only way on.
@@ -445,7 +490,7 @@ if (isMainThread && isEntry) {
     : Math.max(1, Math.min(requested || availableParallelism(), RUNS));
 
   if (workers > 1) console.log('workers: ' + workers);
-  for (const policy of ['clear', 'dive']) {
+  for (const policy of ['clear', 'dive', 'shoot']) {
     const { results, ms } = await runSweep(policy, workers);
     report(policy, results, ms);
   }
