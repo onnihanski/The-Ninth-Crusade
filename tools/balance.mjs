@@ -22,6 +22,7 @@ import { Game } from '../src/game/game.js';
 import { moveOrAttack, pickUp, useItem, equipItem, descend, fire } from '../src/game/actions.js';
 import { Memorial, memoryStorage } from '../src/game/memorial.js';
 import { effectiveSpeed, rangedProfile, canFire } from '../src/game/status.js';
+import { mitigate } from '../src/game/combat.js';
 import { chebyshev, DIRS8 } from '../src/engine/grid.js';
 import { dijkstraMap, stepDownhill, UNREACHABLE } from '../src/engine/dijkstra.js';
 import { MAX_DEPTH } from '../src/data/regions.js';
@@ -86,13 +87,32 @@ let cornered = false;
 // gets exercised at all.
 const SHOT_WEIGHT = 3;
 
-/** Rough combat value: damage per turn, plus survivability. */
+/**
+ * Damage throughput multiplied by survivability -- a product, and that is the
+ * whole point of it.
+ *
+ * The first version added them: power scaled by speed, plus defense times 1.5
+ * flat. Nothing in that sum could ever make armour a bad trade, so the bot took
+ * the heaviest of everything and walked into the last arena in a tower shield
+ * and ossuary plate at half turn rate. Baudouin then killed 57% of the
+ * crusaders who reached him, which read as a boss who was too strong and was a
+ * crusader who had dressed wrong: he loses that fight comfortably at equal
+ * speed and wins it outright at speed 45.
+ *
+ * The shape falls out of what actually kills you. Damage taken over a fight is
+ * roughly enemyHp * enemySpeed * mitigate(defense) / (power * yourSpeed), so
+ * what a crusader wants to maximise is power * speed * toughness. Heavy gear
+ * bought with speed now has to earn back what it costs, in the same currency
+ * the game charges for it -- and `toughness` is read off the game's own
+ * mitigation curve rather than invented here, so it cannot drift from it.
+ */
 function score(player, equipment) {
   const worn = Object.values(equipment).filter(Boolean);
   const bonus = (field) => worn.reduce((sum, i) => sum + (i.item.equip[field] ?? 0), 0);
   const speed = Math.max(25, player.speed + bonus('speed'));
-  const melee = (player.power + bonus('power')) * (speed / 100)
-    + (player.defense + bonus('defense')) * 1.5;
+  const power = player.power + bonus('power');
+  const toughness = 100 / mitigate(100, player.defense + bonus('defense'));
+  const melee = power * (speed / 100) * toughness;
   if (policyInPlay !== 'shoot') return melee;
 
   const ranged = worn.map((i) => i.item.equip.ranged).find(Boolean);
@@ -112,7 +132,10 @@ function score(player, equipment) {
   // common weapon rather than the ranged game. Range is the other half of what
   // a bow buys: it is how many shots land before anything arrives.
   const shots = (ranged.power / (ranged.reload + 1)) * (ranged.range / 4);
-  return melee + shots * SHOT_WEIGHT;
+  // Shots are throughput like swings are, so they belong inside the product
+  // rather than added onto it -- a bow is worth more to a crusader who lives
+  // long enough to fire it twice.
+  return (power + shots * SHOT_WEIGHT) * (speed / 100) * toughness;
 }
 
 /** Melee value alone, for ranking a sidearm against other sidearms. */
