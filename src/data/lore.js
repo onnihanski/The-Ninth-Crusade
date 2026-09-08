@@ -84,6 +84,40 @@ export const REVEAL = {
 // fiction, exactly what the thing is about to do to you -- the mechanic is
 // never a surprise, only the fight is.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE COMPANY THAT WENT DOWN WITH HIM
+//
+// A first run has an empty memorial, so the Empty Tomb has none of your own
+// dead to field -- and the Empty Tomb is precisely where the balance harness
+// found the game had stopped being dangerous. These are who is down there when
+// you have not yet left anyone: the crusaders who followed Sir Baudouin, still
+// on the floor they reached.
+//
+// They are named rather than anonymous because a nameless revenant is the one
+// thing the memorial is not for. Once you have your own dead this deep, they
+// take these places -- the tomb prefers your predecessors to his.
+//
+// Tone: the record admires them, and does not say what happened. Same rule as
+// the gate chapters -- nothing here may hint at the reveal.
+// ---------------------------------------------------------------------------
+export const THE_COMPANY = [
+  {
+    name: 'Sister Aveline the Second Banner',
+    depth: 10,
+    note: 'She carried the second banner and would not put it down.',
+  },
+  {
+    name: 'Brother Gervais of the Long Watch',
+    depth: 11,
+    note: 'He counted the days aloud so the others would not have to.',
+  },
+  {
+    name: 'Knight Hedwige the Unanswered',
+    depth: 12,
+    note: 'She asked, at each gate, whether they were still going down.',
+  },
+];
+
 export const BOSS_LORE = {
   herald: {
     title: 'the Herald of the Third Wall',

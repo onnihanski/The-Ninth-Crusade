@@ -120,6 +120,40 @@ export function effectiveDefense(entity) {
 }
 
 /**
+ * Stats that answer the crusader's own, capped and lagged.
+ *
+ * The balance harness found the dungeon's back half inverted: depths 9, 10 and
+ * 11 killed 5-6% of the crusaders who reached them while depth 8 killed 23%.
+ * Monster stats climb linearly; a crusader's climb multiplicatively, because
+ * levels and gear feed the same numbers. By the Empty Tomb the player has
+ * simply overtaken the roster.
+ *
+ * Baudouin was the only late fight that worked, and this is why: he is the one
+ * enemy whose power is a function of yours. This is that rule, lifted out of
+ * his implementation so the dead can borrow it too.
+ *
+ * `lag` keeps the mirror a step behind the crusader -- close enough to be
+ * frightening, never a wall -- and the caps stop a good run from making the
+ * game unwinnable at exactly the moment it has been earned.
+ */
+export function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMultiple }) {
+  const basePower = entity.power;
+  const baseDefense = entity.defense;
+  const baseHp = entity.maxHp;
+
+  entity.power = clampTo(effectivePower(player) - lag, basePower, basePower + powerCap);
+  entity.defense = clampTo(effectiveDefense(player) - lag, baseDefense, baseDefense + defenseCap);
+  entity.maxHp = clampTo(player.maxHp, baseHp, baseHp * hpMultiple);
+  entity.hp = entity.maxHp;
+  entity.mirrored = true;
+  return entity;
+}
+
+function clampTo(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+/**
  * Heavy gear costs turns, which is the whole trade. Floored well above zero:
  * an actor that never banks energy would spin the scheduler forever waiting
  * for a turn that cannot arrive.

@@ -7,14 +7,14 @@ import { makePlayer, makeMonster, makeItem, makeRevenant } from './entity.js';
 import { smiteNearest } from './effects.js';
 import { prepareBoss } from './bosses.js';
 import { takeAiTurn } from './ai.js';
-import { tickStatuses, tickReload, tickBlock, effectiveSpeed, equipped } from './status.js';
+import { tickStatuses, tickReload, tickBlock, effectiveSpeed, equipped, mirrorToPlayer } from './status.js';
 import { tickRegeneration } from './progress.js';
 import { Memorial } from './memorial.js';
 import { MONSTERS, monsterTable } from '../data/monsters.js';
 import { ITEMS, itemTable } from '../data/items.js';
 import { regionForDepth, isBossDepth } from '../data/regions.js';
 import { crusaderName, ordinal } from '../data/names.js';
-import { GATE_CHAPTERS, BOSS_LORE } from '../data/lore.js';
+import { THE_COMPANY, GATE_CHAPTERS, BOSS_LORE } from '../data/lore.js';
 import { THEME } from '../data/theme.js';
 
 const ACT_COST = 100;
@@ -32,6 +32,14 @@ export const MAP_HEIGHT = 42;
 // regeneration makes health free: clear a floor, rest to full, repeat. This is
 // what puts a price on standing still, and it is why resting is a decision
 // rather than a formality.
+// The dead of the Empty Tomb answer the crusader's build, on Baudouin's rule
+// but at a fraction of his reach. He lags your power by 5 and may exceed his
+// own base by 4; they lag by 7 and may exceed theirs by 2. `hpMultiple: 1`
+// leaves their health exactly as the memorial recorded it -- they learn to hit
+// the way you hit, and still die on the schedule they always did. The ending
+// stays the hardest thing in the dungeon.
+const REVENANT_MIRROR = { lag: 7, powerCap: 2, defenseCap: 1, hpMultiple: 1 };
+
 const WANDER_EVERY = 45;
 const WANDER_MIN_DISTANCE = 12;
 
@@ -177,14 +185,32 @@ export class Game {
    * holding what they were holding.
    */
   summonTheRemembered(depth) {
-    const dead = this.memorial.atDepth(depth);
+    const region = regionForDepth(depth);
+    const yours = this.memorial.atDepth(depth);
+
+    // A first run has left nobody this deep, and the Empty Tomb is exactly
+    // where the harness found the dungeon had stopped being dangerous. When
+    // you have none of your own dead here, his company stands in for them --
+    // so the mechanic is not something a player only meets on their sixth run.
+    const dead = (yours.length || !region?.remembers)
+      ? yours
+      : THE_COMPANY.filter((c) => c.depth === depth);
     if (!dead.length) return;
 
     const rooms = this.level.rooms.slice(1);
     for (const entry of dead) {
       const room = this.rng.pick(rooms.length ? rooms : this.level.rooms);
       const spot = this.freeSpotInRoom(room);
-      if (spot) this.level.add(makeRevenant(entry, spot.x, spot.y));
+      if (!spot) continue;
+      const risen = makeRevenant(entry, spot.x, spot.y);
+      // The dead of this region fight the way you fight. Gentler than Baudouin
+      // on every axis -- he is the ending, and they are what the floor is made
+      // of -- but scaled from the same crusader, so the bottom of the dungeon
+      // can no longer be walked through by a run that has outgrown its roster.
+      if (region?.remembers) {
+        mirrorToPlayer(risen, this.player, REVENANT_MIRROR);
+      }
+      this.level.add(risen);
     }
     this.log(
       dead.length === 1

@@ -1,6 +1,6 @@
 import { chebyshev } from '../engine/grid.js';
 import { makeMonster, makeItem } from './entity.js';
-import { effectivePower, effectiveDefense } from './status.js';
+import { mirrorToPlayer } from './status.js';
 import { monsterTable } from '../data/monsters.js';
 import { ICONS } from '../data/icons.js';
 import { ITEMS } from '../data/items.js';
@@ -50,15 +50,12 @@ export function prepareBoss(game, boss) {
 
   // Never weaker than the crusader who found him, never a wall either: he is
   // one step behind your build, which is close enough to be frightening.
-  const basePower = boss.power;
-  const baseDefense = boss.defense;
-  const baseHp = boss.maxHp;
-
-  boss.power = clamp(effectivePower(player) - MIRROR_LAG, basePower, basePower + MIRROR_POWER_CAP);
-  boss.defense = clamp(effectiveDefense(player) - MIRROR_LAG, baseDefense, baseDefense + MIRROR_DEFENSE_CAP);
-  boss.maxHp = clamp(player.maxHp, baseHp, baseHp * MIRROR_HP_MULTIPLE);
-  boss.hp = boss.maxHp;
-  boss.mirrored = true;
+  mirrorToPlayer(boss, player, {
+    lag: MIRROR_LAG,
+    powerCap: MIRROR_POWER_CAP,
+    defenseCap: MIRROR_DEFENSE_CAP,
+    hpMultiple: MIRROR_HP_MULTIPLE,
+  });
 }
 
 /**
@@ -121,9 +118,6 @@ export function bossRises(game, boss) {
   return true;
 }
 
-function clamp(value, low, high) {
-  return Math.max(low, Math.min(high, value));
-}
 
 function openSpotNear(game, boss) {
   const offsets = game.rng.shuffle([

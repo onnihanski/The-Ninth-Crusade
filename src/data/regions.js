@@ -40,6 +40,10 @@ export const REGIONS = [
     monsters: ['graveWraith', 'pilgrimHusk', 'sepulchreWorm', 'mourner'],
     boss: 'baudouin',
     final: true,
+    // The dead here fight the way you fight. Baudouin is the only late enemy
+    // that ever worked, and this is the reason -- his power is a function of
+    // yours. His region now shares it: see mirrorToPlayer in game/status.js.
+    remembers: true,
     palette: { wall: '#3f3a44', floor: '#5c5563' },
   },
 ];
