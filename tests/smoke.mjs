@@ -22,7 +22,7 @@ import { keyToIntent } from '../src/ui/input.js';
 import { xpToNext, tickRegeneration } from '../src/game/progress.js';
 import { mitigate, damage } from '../src/game/combat.js';
 import { MONSTERS, monsterTable } from '../src/data/monsters.js';
-import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER } from '../src/data/lore.js';
+import { GATE_CHAPTERS, BOSS_LORE, REVEAL, FIRST_CRUSADER, THE_COMPANY } from '../src/data/lore.js';
 import { ICONS, ICON_KEYS, TILE_ICONS, TILE_ICON_KEYS } from '../src/data/icons.js';
 import { generateLevel } from '../src/world/mapgen.js';
 import { RNG } from '../src/engine/rng.js';
@@ -43,6 +43,21 @@ function check(label, condition) {
 function section(name) { console.log(name); }
 
 // --- helpers ---------------------------------------------------------------
+/** An open tile as far from `from` as this floor offers, for approach tests. */
+function openSpotFarFrom(g, from) {
+  let best = null;
+  let bestDistance = -1;
+  for (let y = 0; y < g.level.height; y++) {
+    for (let x = 0; x < g.level.width; x++) {
+      if (!g.level.isOpen(x, y)) continue;
+      if (g.level.bossRoom && !g.level.inArena(x, y)) continue;
+      const d = chebyshev(x, y, from.x, from.y);
+      if (d > bestDistance) { bestDistance = d; best = { x, y }; }
+    }
+  }
+  return best;
+}
+
 function stepToward(g, tx, ty) {
   const dist = dijkstraMap(g.level.width, g.level.height, [[tx, ty]],
     (x, y) => g.level.isWalkable(x, y));
@@ -2063,6 +2078,92 @@ section('random playthroughs');
   }
   check('most crusaders survive 300 turns of flailing on depth 1 (' + survived + '/40)',
     survived >= 30);
+}
+
+section('a boss does not hold its ground');
+{
+  // Odo's voice has range 99, so the shooter branch is true from anywhere in
+  // his arena. He used to return from it every turn without moving, which made
+  // the boss of the Choir the safest room in the region -- 5.3% of arrivals,
+  // against 23.0% on the floor above him.
+  const g = new Game({ seed: 909, memorial: new Memorial(memoryStorage()) });
+  g.buildLevel(9);
+  const odo = g.level.entities.find((e) => e.boss);
+  check('the Choir fields its boss', Boolean(odo));
+  check('his voice reaches across the arena', rangedProfile(odo).range > 20);
+
+  // Put him far from the crusader with an empty weapon, which is the state the
+  // old code stood still in.
+  const far = openSpotFarFrom(g, odo);
+  if (far) { g.player.x = far.x; g.player.y = far.y; }
+  odo.reloading = 99;
+  const before = { x: odo.x, y: odo.y };
+  const wasFar = chebyshev(odo.x, odo.y, g.player.x, g.player.y);
+  takeAiTurn(g, odo);
+  const moved = odo.x !== before.x || odo.y !== before.y;
+  check('he closes while he reloads instead of standing still', moved);
+  check('and the step is toward the crusader',
+    chebyshev(odo.x, odo.y, g.player.x, g.player.y) < wasFar);
+
+  // The rule that makes ordinary archers beatable is untouched.
+  const g2 = new Game({ seed: 910, memorial: new Memorial(memoryStorage()) });
+  g2.buildLevel(7);
+  const shooter = makeMonster({ key: 'psalmist', ...MONSTERS.psalmist },
+    g2.player.x + 4, g2.player.y);
+  if (g2.level.isOpen(shooter.x, shooter.y)) {
+    g2.level.add(shooter);
+    shooter.ai.hunting = true;
+    shooter.reloading = 99;
+    const spot = { x: shooter.x, y: shooter.y };
+    takeAiTurn(g2, shooter);
+    check('an ordinary archer still cranks where it stands',
+      shooter.x === spot.x && shooter.y === spot.y);
+  }
+}
+
+section('the Empty Tomb remembers how you fight');
+{
+  const g = new Game({ seed: 4242, memorial: new Memorial(memoryStorage()) });
+  // A crusader who has outgrown the roster, which is the case this exists for.
+  g.player.power = 14; g.player.defense = 10; g.player.maxHp = 62; g.player.hp = 62;
+
+  g.buildLevel(8);
+  check('nothing is mirrored above the Empty Tomb',
+    !g.level.entities.some((e) => e.mirrored && !e.boss));
+
+  const seen = [];
+  for (const depth of [10, 11, 12]) {
+    g.buildLevel(depth);
+    const risen = g.level.entities.filter((e) => e.revenant);
+    check('depth ' + depth + ' fields one of the company', risen.length === 1);
+    if (!risen.length) continue;
+    seen.push(risen[0]);
+    check('depth ' + depth + ' revenant answers the crusader', risen[0].mirrored === true);
+  }
+
+  if (seen.length === 3) {
+    check('the company is named, never anonymous',
+      seen.every((r) => THE_COMPANY.some((c) => r.name.includes(c.name))));
+    // Lagged and capped: a real fight, never a wall.
+    check('they hit below the crusader who found them',
+      seen.every((r) => r.power < effectivePower(g.player)));
+    check('and their health is left as the record has it',
+      seen.every((r) => r.maxHp < g.player.maxHp));
+  }
+
+  // Your own dead take those places as soon as there are any.
+  const storage = memoryStorage();
+  const memorial = new Memorial(storage);
+  const died = new Game({ seed: 4243, memorial });
+  died.buildLevel(11);
+  died.finishRun('the tomb');
+  const next = new Game({ seed: 4244, memorial });
+  next.player.power = 14; next.player.defense = 10;
+  next.buildLevel(11);
+  const here = next.level.entities.filter((e) => e.revenant);
+  check('your own predecessor displaces the company',
+    here.length === 1 && here[0].name.includes(died.crusaderName));
+  check('and is mirrored the same way', here[0]?.mirrored === true);
 }
 
 console.log('');
