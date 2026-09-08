@@ -136,7 +136,7 @@ export function effectiveDefense(entity) {
  * frightening, never a wall -- and the caps stop a good run from making the
  * game unwinnable at exactly the moment it has been earned.
  */
-export function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMultiple }) {
+export function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMultiple, hpFactor = 1 }) {
   const basePower = entity.power;
   const baseDefense = entity.defense;
   const baseHp = entity.maxHp;
@@ -158,7 +158,14 @@ export function mirrorToPlayer(entity, player, { lag, powerCap, defenseCap, hpMu
   // would otherwise be written down as having negative strength of its own.
   entity.power = Math.max(1, targetPower - gearBonus(entity, 'power'));
   entity.defense = Math.max(0, targetDefense - gearBonus(entity, 'defense'));
-  entity.maxHp = clampTo(player.maxHp, baseHp, baseHp * hpMultiple);
+  // Health is the only knob on this fight that moves smoothly. Power does not:
+  // mitigate() rounds, so against the defense-15 crusader who actually arrives
+  // at the last floor, every effective power from 12 to 14 deals exactly 5 and
+  // every one from 15 to 17 deals exactly 6. Sweeping the lag across 0, 1 and 2
+  // returned byte-identical results three times. What a mirror cannot be tuned
+  // by, it can be tuned by lasting longer: each extra turn you need to finish
+  // it is another turn it swings.
+  entity.maxHp = clampTo(Math.round(player.maxHp * hpFactor), baseHp, baseHp * hpMultiple);
   entity.hp = entity.maxHp;
   entity.mirrored = true;
   return entity;

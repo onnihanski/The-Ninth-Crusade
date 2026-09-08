@@ -22,7 +22,8 @@ const CARRY_RANGE = 99;       // Odo: a voice does not have a range
 const MIRROR_POWER_CAP = 4;
 const MIRROR_DEFENSE_CAP = 2;
 const MIRROR_HP_MULTIPLE = 2;
-const MIRROR_LAG = 5;         // how far behind your build he stays
+const MIRROR_LAG = 2;         // how far behind your build he stays
+const MIRROR_HP_FACTOR = 1.11; // and how much longer than you he lasts
 
 /**
  * Spawn-time setup. Only Baudouin needs it: he has been down here through nine
@@ -55,6 +56,7 @@ export function prepareBoss(game, boss) {
     powerCap: MIRROR_POWER_CAP,
     defenseCap: MIRROR_DEFENSE_CAP,
     hpMultiple: MIRROR_HP_MULTIPLE,
+    hpFactor: MIRROR_HP_FACTOR,
   });
 }
 
