@@ -318,17 +318,25 @@ function restIfSafe(game, monsters) {
   return !near;
 }
 
-export function playOne(seed, policy, memorial, onStuck) {
+export function playOne(seed, policy, memorial, onStuck, onDepth) {
   policyInPlay = policy;
   const game = new Game({ seed, memorial, ...mapSize });
   let floorTurns = 0;
   let ending = 'turnlimit';
+
+  let seenDepth = 0;
 
   while (game.state === 'playing' && floorTurns < TURNS_PER_FLOOR * MAX_DEPTH) {
     floorTurns++;
     let acted = false;
 
     const level = game.level;
+    // Arrival on a new floor, for callers asking what shape a crusader is in
+    // when they get somewhere rather than only where they stopped.
+    if (level.depth !== seenDepth) {
+      seenDepth = level.depth;
+      onDepth?.(game, level.depth);
+    }
     const passable = (x, y) => level.isWalkable(x, y);
     const thorough = policy === 'clear' || policy === 'shoot';
     // Shut in with a boss: read before upgrade(), which is what performs the
