@@ -2019,6 +2019,26 @@ const REGEN_TURNS = 20;
 const POWER_EVERY = 2;    // levels
 const DEFENSE_EVERY = 3;  // levels
 
+// Getting there is worth something on its own.
+//
+// Kills were the only source of experience, which made "descend quickly" not a
+// strategy but a way to lose: the balance harness ran 300 hurried crusaders and
+// none of them won, with a median ending of depth 3 at level 1. A diver arrived
+// at the first boss having earned nothing, because the only thing that pays is
+// the fighting they skipped.
+//
+// Arriving on a floor now pays, and pays more the deeper the floor. It is well
+// under what clearing that floor is worth, so thoroughness is still the richer
+// line -- but speed becomes a trade with something on both sides of it rather
+// than a slower death.
+// First tried at 10 + 8*depth, which is 726 experience over a full descent and
+// far too much: the thorough policy's win rate went from 21% to 39.5% and its
+// median level from 9 to 18, while the hurried one still won nothing. The
+// reward compounds -- levels buy survival, survival buys kills, kills buy
+// levels -- so it has to be small enough that clearing stays the richer line.
+const DESCENT_XP_BASE = 4;
+const DESCENT_XP_STEP = 3;
+
 /**
  * Slow regeneration, the traditional kind. Without it the only sustain is
  * phials, every scratch is permanent, and a floor of weak monsters kills by
@@ -2042,6 +2062,11 @@ function tickRegeneration(actor) {
   if (actor.regenTimer < regenInterval(actor)) return;
   actor.regenTimer = 0;
   actor.hp++;
+}
+
+/** What arriving on a floor is worth. Nothing for depth 1: you begin there. */
+function descentXp(depth) {
+  return depth <= 1 ? 0 : DESCENT_XP_BASE + DESCENT_XP_STEP * depth;
 }
 
 /** XP needed to go from `level` to the next one. */
@@ -3589,6 +3614,10 @@ class Game {
     this.level.remove(this.player);
     this.buildLevel(depth);
     this.log('You go down. Depth ' + depth + '.', 'notable');
+    // Reaching a floor is worth something even to a crusader who fought
+    // nothing to get here. Awarded after the level is built so a level-up
+    // message lands under the arrival rather than above it.
+    gainXp(this, this.player, descentXp(depth));
     if (this.region !== previousRegion) this.log(this.region.arrival, 'mythic');
   }
 

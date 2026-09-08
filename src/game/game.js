@@ -8,7 +8,7 @@ import { smiteNearest } from './effects.js';
 import { prepareBoss } from './bosses.js';
 import { takeAiTurn } from './ai.js';
 import { tickStatuses, tickReload, tickBlock, effectiveSpeed, equipped, mirrorToPlayer } from './status.js';
-import { tickRegeneration } from './progress.js';
+import { tickRegeneration, gainXp, descentXp } from './progress.js';
 import { Memorial } from './memorial.js';
 import { MONSTERS, monsterTable } from '../data/monsters.js';
 import { ITEMS, itemTable } from '../data/items.js';
@@ -136,6 +136,10 @@ export class Game {
     this.level.remove(this.player);
     this.buildLevel(depth);
     this.log('You go down. Depth ' + depth + '.', 'notable');
+    // Reaching a floor is worth something even to a crusader who fought
+    // nothing to get here. Awarded after the level is built so a level-up
+    // message lands under the arrival rather than above it.
+    gainXp(this, this.player, descentXp(depth));
     if (this.region !== previousRegion) this.log(this.region.arrival, 'mythic');
   }
 
