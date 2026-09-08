@@ -2128,26 +2128,28 @@ const MONSTERS = {
     name: 'bonepicker', glyph: 'z', color: 'monsterWeak',
     weight: 11, maxHp: 10, power: 4, defense: 1, speed: 100, xp: 14,
   },
-  // The one thing in this region that can both catch you and hurt you.
-  //
-  // At power 4 it could do neither: the Reliquary's fast monster was harmless
-  // and its dangerous one (the warden, speed 80) is slower than a crusader, so
-  // there was nothing here that could not simply be walked away from. Depths 4
-  // and 5 killed 2.3% and 1.2% of the crusaders who reached them, against
-  // 17.6% and 23.0% one region below -- and the difference was not the numbers,
-  // which climb smoothly, but this: the Choir's winged thing is the first
-  // creature in the game carrying speed and power at once, and it arrives all
-  // at once.
-  //
-  // 7 hit points keeps it a thing you deal with rather than a wall. It is the
-  // archetype, introduced one region early and made of paper.
   reliquaryMoth: {
     name: 'reliquary moth', glyph: 'm', color: 'monsterWeak',
-    weight: 9, maxHp: 7, power: 6, defense: 0, speed: 170, xp: 18,
+    weight: 9, maxHp: 7, power: 4, defense: 0, speed: 170, xp: 12,
   },
+  // The one thing in this region that can both catch you and hurt you.
+  //
+  // Depths 4 and 5 killed 2.3% and 1.2% of the crusaders who reached them,
+  // against 17.6% and 23.0% one region below, off a threat budget that climbs
+  // smoothly across the join. What the Reliquary lacked was not numbers but an
+  // archetype: speed and power sat on different monsters here, so the fast one
+  // was harmless and this one, at speed 80, was slower than a crusader and
+  // could be walked away from. The Choir's winged thing carries speed 150 and
+  // power 8 at once, and a player met that combination cold on depth 7.
+  //
+  // Raising the moth's power instead was tried first and did almost nothing --
+  // 2.3% to 3.4% on depth 4 -- because 7 hit points die to one swing from a
+  // crusader who has just killed the Herald. Power on a creature that never
+  // gets to use it is not a threat. 18 hit points and defense 3 are what make
+  // this one live long enough for speed 110 to mean something.
   ossuaryWarden: {
     name: 'ossuary warden', glyph: 'w', color: 'monsterTough',
-    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 80, xp: 24,
+    weight: 6, maxHp: 18, power: 6, defense: 3, speed: 110, xp: 24,
   },
   boneSlinger: {
     name: 'bone slinger', glyph: 'b', color: 'monsterTough',
